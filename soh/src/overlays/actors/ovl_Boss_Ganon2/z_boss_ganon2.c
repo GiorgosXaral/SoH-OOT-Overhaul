@@ -10,6 +10,7 @@
 #include "soh/OTRGlobals.h"
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "boss_overhaul.h"
 
 #include <string.h>
 
@@ -34,6 +35,14 @@ void func_809002CC(BossGanon2* this, PlayState* play);
 void func_80900344(BossGanon2* this, PlayState* play);
 void func_80900580(BossGanon2* this, PlayState* play);
 void func_80900650(BossGanon2* this, PlayState* play);
+// Boss Overhaul: Ganon's ranged attacks
+void BossGanon2_InitProjectile(BossGanon2* this, PlayState* play);
+void BossGanon2_ProjectileUpdate(Actor* thisx, PlayState* play);
+void BossGanon2_ProjectileDraw(Actor* thisx, PlayState* play);
+void BossGanon2_SetupRangedAttack(BossGanon2* this, PlayState* play);
+void BossGanon2_RangedAttack(BossGanon2* this, PlayState* play);
+void BossGanon2_SetupFireBreath(BossGanon2* this, PlayState* play);
+void BossGanon2_FireBreath(BossGanon2* this, PlayState* play);
 void func_80900890(BossGanon2* this, PlayState* play);
 void func_8090120C(BossGanon2* this, PlayState* play);
 void func_80905DA8(BossGanon2* this, PlayState* play);
@@ -55,6 +64,59 @@ const ActorInit Boss_Ganon2_InitVars = {
 };
 
 #include "z_boss_ganon2_data.c"
+
+// Boss Overhaul: Ganon gets angrier once he is on the collapsing tower, or once he has taken real damage
+// after the first time he gets back up (health is reset to BO_HP(25) then).
+#define GANON2_ENRAGED(this) \
+    (BO_ATTACKS_ENABLED() && ((this)->unk_334 != 0 || (s8)(this)->actor.colChkInfo.health < BO_HP(25)))
+
+// Boss Overhaul: Ganon can now hurl Ganondorf's magic and breathe fire. Both are extra instances of this same
+// actor, spawned with these params, drawn with Ganondorf's own energy-ball display lists out of OBJECT_GANON
+// (already loaded in this room for Ganon's model), so no new assets are involved.
+#define BO_G2_PROJ_MAGIC 100
+#define BO_G2_PROJ_FIRE 101
+
+// Copied from Ganondorf's own light ball (sLightBallCylinderInit in z_boss_ganon.c).
+static ColliderCylinderInit sBoMagicCylinderInit = {
+    {
+        COLTYPE_NONE,
+        AT_ON | AT_TYPE_ENEMY,
+        AC_ON | AC_TYPE_PLAYER,
+        OC1_ON | OC1_TYPE_ALL,
+        OC2_TYPE_1,
+        COLSHAPE_CYLINDER,
+    },
+    {
+        ELEMTYPE_UNK6,
+        { 0x00100700, 0x00, 0x08 },
+        { 0x0D900740, 0x00, 0x00 },
+        TOUCH_ON | TOUCH_SFX_NORMAL,
+        BUMP_ON,
+        OCELEM_ON,
+    },
+    { 20, 30, -15, { 0, 0, 0 } },
+};
+
+// The same, weaker and smaller, for a single puff of the fire breath.
+static ColliderCylinderInit sBoFireCylinderInit = {
+    {
+        COLTYPE_NONE,
+        AT_ON | AT_TYPE_ENEMY,
+        AC_NONE,
+        OC1_NONE,
+        OC2_TYPE_1,
+        COLSHAPE_CYLINDER,
+    },
+    {
+        ELEMTYPE_UNK6,
+        { 0x00100700, 0x00, 0x04 },
+        { 0x0D900740, 0x00, 0x00 },
+        TOUCH_ON | TOUCH_SFX_NORMAL,
+        BUMP_NONE,
+        OCELEM_NONE,
+    },
+    { 16, 26, -13, { 0, 0, 0 } },
+};
 
 Vec3f D_8090EB20;
 
@@ -163,6 +225,12 @@ void BossGanon2_Init(Actor* thisx, PlayState* play) {
     s32 pad;
     s16 i;
 
+    if (thisx->params >= BO_G2_PROJ_MAGIC) {
+        // Boss Overhaul: this instance is one of Ganon's projectiles, not the boss himself
+        BossGanon2_InitProjectile(this, play);
+        return;
+    }
+
     play->specialEffects = sBossGanon2Particles;
 
     for (i = 0; i < ARRAY_COUNT(sBossGanon2Particles); i++) {
@@ -170,7 +238,7 @@ void BossGanon2_Init(Actor* thisx, PlayState* play) {
     }
 
     this->actor.colChkInfo.mass = MASS_IMMOVABLE;
-    this->actor.colChkInfo.health = 30;
+    this->actor.colChkInfo.health = BO_HP(30);
     Collider_InitJntSph(play, &this->unk_424);
     Collider_SetJntSph(play, &this->unk_424, &this->actor, &sJntSphInit1, this->unk_464);
     Collider_InitJntSph(play, &this->unk_444);
@@ -190,6 +258,12 @@ void BossGanon2_Init(Actor* thisx, PlayState* play) {
 
 void BossGanon2_Destroy(Actor* thisx, PlayState* play) {
     BossGanon2* this = (BossGanon2*)thisx;
+
+    if (thisx->params >= BO_G2_PROJ_MAGIC) {
+        // Boss Overhaul: a projectile only ever set up its own cylinder
+        Collider_DestroyCylinder(play, &this->boProjCollider);
+        return;
+    }
 
     SkelAnime_Free(&this->skelAnime, play);
     Collider_DestroyJntSph(play, &this->unk_424);
@@ -1236,9 +1310,12 @@ void func_80900344(BossGanon2* this, PlayState* play) {
                 this->skelAnime.playSpeed *= 1.5f;
             }
         }
+        if (GANON2_ENRAGED(this)) {
+            this->skelAnime.playSpeed *= 1.25f;
+        }
         phi_f0 = this->skelAnime.playSpeed * 3.0f;
     } else {
-        phi_f0 = 2.0f;
+        phi_f0 = BO_ATTACKS_ENABLED() ? (GANON2_ENRAGED(this) ? 3.0f : 2.5f) : 2.0f;
         if (this->actor.xzDistToPlayer >= 200.0f) {
             this->unk_338 = 1;
             Animation_MorphToLoop(&this->skelAnime, &gGanonWalkAnim, -10.0f);
@@ -1247,6 +1324,13 @@ void func_80900344(BossGanon2* this, PlayState* play) {
 
     SkelAnime_Update(&this->skelAnime);
     Math_ApproachF(&this->actor.speedXZ, phi_f0, 0.5f, 1.0f);
+
+    if (BO_ATTACKS_ENABLED() && (this->boRangedCooldown == 0) && (this->actor.xzDistToPlayer > 220.0f) &&
+        (this->actor.xzDistToPlayer < 1200.0f)) {
+        // Boss Overhaul: out of sword reach, Ganon answers with magic or fire instead of only lumbering forward
+        BossGanon2_SetupRangedAttack(this, play);
+        return;
+    }
 
     if (this->unk_1A2[0] == 0) {
         func_808FFDB0(this, play);
@@ -1267,6 +1351,10 @@ void func_80900580(BossGanon2* this, PlayState* play) {
         Animation_MorphToPlayOnce(&this->skelAnime, &gGanonRightSwordSwingAnim, -5.0f);
         this->unk_194 = Animation_GetLastFrame(&gGanonRightSwordSwingAnim);
         this->unk_198 = (this->unk_194 - 15.0f) - 5.0f;
+    }
+
+    if (GANON2_ENRAGED(this)) {
+        this->skelAnime.playSpeed = 1.25f;
     }
 
     this->actionFunc = func_80900650;
@@ -1297,7 +1385,13 @@ void func_80900650(BossGanon2* this, PlayState* play) {
 
         if ((this->unk_311 == 1) && (this->actor.xzDistToPlayer < 250.0f) && this->unk_313) {
             func_80900580(this, play);
+        } else if ((this->unk_311 == 0) && GANON2_ENRAGED(this) && (this->boSwingCombo == 0) &&
+                   (this->actor.xzDistToPlayer < 250.0f) && this->unk_313) {
+            // Enraged: one more left/right pair of swings tacked onto the chain.
+            this->boSwingCombo = 1;
+            func_80900580(this, play);
         } else {
+            this->boSwingCombo = 0;
             func_808FFDB0(this, play);
         }
     }
@@ -1309,6 +1403,245 @@ void func_80900650(BossGanon2* this, PlayState* play) {
     } else {
         func_808FFBBC(this, play, 0);
     }
+}
+
+// Boss Overhaul: where Ganon's magic and fire come out of him. unk_1B8 is his head, written every frame by
+// BossGanon2_PostLimbDraw; the fallback covers the frames before he has been drawn.
+void BossGanon2_GetCastPos(BossGanon2* this, Vec3f* out) {
+    if (this->unk_1B8.y > (this->actor.world.pos.y + 20.0f)) {
+        *out = this->unk_1B8;
+    } else {
+        out->x = this->actor.world.pos.x;
+        out->y = this->actor.world.pos.y + 130.0f;
+        out->z = this->actor.world.pos.z;
+    }
+
+    out->x += Math_SinS(this->actor.shape.rot.y) * 40.0f;
+    out->z += Math_CosS(this->actor.shape.rot.y) * 40.0f;
+}
+
+// Boss Overhaul: fires one projectile from `from` towards the player, turned aside by `yawOffset`.
+void BossGanon2_SpawnProjectile(BossGanon2* this, PlayState* play, Vec3f* from, s16 params, f32 speed,
+                                s16 yawOffset) {
+    Player* player = GET_PLAYER(play);
+    Actor* proj;
+    f32 dx = player->actor.world.pos.x - from->x;
+    f32 dy = (player->actor.world.pos.y + 40.0f) - from->y;
+    f32 dz = player->actor.world.pos.z - from->z;
+    f32 dist = sqrtf(SQ(dx) + SQ(dy) + SQ(dz));
+    f32 cosOff;
+    f32 sinOff;
+
+    if (dist < 1.0f) {
+        return;
+    }
+
+    proj = Actor_Spawn(&play->actorCtx, play, ACTOR_BOSS_GANON2, from->x, from->y, from->z, 0, 0, 0, params);
+
+    if (proj == NULL) {
+        return;
+    }
+
+    dx = (dx / dist) * speed;
+    dy = (dy / dist) * speed;
+    dz = (dz / dist) * speed;
+
+    cosOff = Math_CosS(yawOffset);
+    sinOff = Math_SinS(yawOffset);
+
+    proj->velocity.x = (dx * cosOff) + (dz * sinOff);
+    proj->velocity.y = dy;
+    proj->velocity.z = (dz * cosOff) - (dx * sinOff);
+    proj->world.rot.y = Math_Atan2S(proj->velocity.z, proj->velocity.x);
+    proj->shape.rot.y = proj->world.rot.y;
+}
+
+void BossGanon2_InitProjectile(BossGanon2* this, PlayState* play) {
+    // Zelda (En_Zl3) and the falling rubble (Demo_Gj) both look Ganon up by taking the first ACTOR_BOSS_GANON2 in
+    // the boss category, and a freshly spawned actor goes to the head of that list. Keep the projectiles out of it.
+    Actor_ChangeCategory(play, &play->actorCtx, &this->actor, ACTORCAT_MISC);
+    this->actor.flags &= ~(ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE);
+    this->actor.update = BossGanon2_ProjectileUpdate;
+    this->actor.draw = BossGanon2_ProjectileDraw;
+    this->actor.colChkInfo.health = 0;
+    this->actor.gravity = 0.0f;
+    Collider_InitCylinder(play, &this->boProjCollider);
+
+    if (this->actor.params == BO_G2_PROJ_FIRE) {
+        this->boProjKind = 1;
+        this->boProjLife = 24;
+        Actor_SetScale(&this->actor, 0.01f);
+        Collider_SetCylinder(play, &this->boProjCollider, &this->actor, &sBoFireCylinderInit);
+    } else {
+        this->boProjKind = 0;
+        this->boProjLife = 110;
+        Actor_SetScale(&this->actor, 0.01f);
+        Collider_SetCylinder(play, &this->boProjCollider, &this->actor, &sBoMagicCylinderInit);
+    }
+}
+
+void BossGanon2_ProjectileUpdate(Actor* thisx, PlayState* play) {
+    BossGanon2* this = (BossGanon2*)thisx;
+
+    thisx->world.pos.x += thisx->velocity.x;
+    thisx->world.pos.y += thisx->velocity.y;
+    thisx->world.pos.z += thisx->velocity.z;
+    thisx->shape.rot.z += 0x1800;
+
+    if (this->boProjLife > 0) {
+        this->boProjLife--;
+    }
+
+    if (this->boProjKind != 0) {
+        // fire loses its push as it spreads out
+        thisx->velocity.x *= 0.97f;
+        thisx->velocity.y *= 0.97f;
+        thisx->velocity.z *= 0.97f;
+    } else {
+        Audio_PlayActorSound2(thisx, NA_SE_EN_GANON_FIRE - SFX_FLAG);
+    }
+
+    Collider_UpdateCylinder(thisx, &this->boProjCollider);
+    CollisionCheck_SetAT(play, &play->colChkCtx, &this->boProjCollider.base);
+
+    if (this->boProjKind == 0) {
+        CollisionCheck_SetAC(play, &play->colChkCtx, &this->boProjCollider.base);
+    }
+
+    if (this->boProjCollider.base.atFlags & AT_HIT) {
+        this->boProjCollider.base.atFlags &= ~AT_HIT;
+        this->boProjLife = 0;
+    }
+
+    if (this->boProjCollider.base.acFlags & AC_HIT) {
+        // swatted out of the air with a sword or shield
+        this->boProjCollider.base.acFlags &= ~AC_HIT;
+        Audio_PlayActorSound2(thisx, NA_SE_IT_SWORD_REFLECT_MG);
+        this->boProjLife = 0;
+    }
+
+    if (this->boProjLife == 0) {
+        Actor_Kill(thisx);
+    }
+}
+
+// Drawn with Ganon's own light orb, the same display list his body sparks use (func_80904D88), so the fire and
+// the magic need no artwork of their own.
+void BossGanon2_ProjectileDraw(Actor* thisx, PlayState* play) {
+    BossGanon2* this = (BossGanon2*)thisx;
+    s16 alpha = (this->boProjLife < 8) ? (this->boProjLife * 32) : 255;
+    f32 scale = (this->boProjKind != 0) ? 7.0f : 12.0f;
+
+    BossGanon2_SetObjectSegment(this, play, OBJECT_GANON2, true);
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+
+    if (this->boProjKind != 0) {
+        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 190, 70, (u8)alpha);
+        gDPSetEnvColor(POLY_XLU_DISP++, 255, 60, 0, 0);
+    } else {
+        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 255, 170, (u8)alpha);
+        gDPSetEnvColor(POLY_XLU_DISP++, 255, 200, 0, 0);
+    }
+
+    gSPDisplayList(POLY_XLU_DISP++, gGanonLightOrbMaterialDL);
+
+    Matrix_Translate(thisx->world.pos.x, thisx->world.pos.y, thisx->world.pos.z, MTXMODE_NEW);
+    Matrix_ReplaceRotation(&play->billboardMtxF);
+    Matrix_Scale(scale, scale, scale, MTXMODE_APPLY);
+    Matrix_RotateZ((thisx->shape.rot.z / 32768.0f) * 3.1416f, MTXMODE_APPLY);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_XLU_DISP++, gGanonLightOrbModelDL);
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+void BossGanon2_SetupRangedAttack(BossGanon2* this, PlayState* play) {
+    f32 pick = Rand_ZeroOne();
+    s32 enraged = GANON2_ENRAGED(this);
+
+    if (pick < 0.35f) {
+        BossGanon2_SetupFireBreath(this, play);
+        return;
+    }
+
+    Animation_MorphToPlayOnce(&this->skelAnime, &gGanonRightSwordSwingAnim, -5.0f);
+    this->unk_194 = Animation_GetLastFrame(&gGanonRightSwordSwingAnim);
+    this->unk_198 = (this->unk_194 - 15.0f) - 5.0f;
+    this->boRangedKind = (pick < 0.68f) ? 0 : 1;
+    this->boRangedCooldown = enraged ? 110 : 190;
+    this->actionFunc = BossGanon2_RangedAttack;
+    this->unk_336 = 1;
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_ROAR);
+}
+
+void BossGanon2_RangedAttack(BossGanon2* this, PlayState* play) {
+    Vec3f castPos;
+    s16 count;
+    s16 i;
+
+    SkelAnime_Update(&this->skelAnime);
+    Math_ApproachZeroF(&this->actor.speedXZ, 0.5f, 1.0f);
+    Math_ApproachS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 3, 0x800);
+    this->actor.world.rot.y = this->actor.shape.rot.y;
+
+    if (Animation_OnFrame(&this->skelAnime, this->unk_198)) {
+        BossGanon2_GetCastPos(this, &castPos);
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_THROW_BIG);
+
+        if (this->boRangedKind == 0) {
+            BossGanon2_SpawnProjectile(this, play, &castPos, BO_G2_PROJ_MAGIC, 18.0f, 0);
+        } else {
+            count = GANON2_ENRAGED(this) ? 5 : 3;
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_BIGMASIC);
+
+            for (i = 0; i < count; i++) {
+                BossGanon2_SpawnProjectile(this, play, &castPos, BO_G2_PROJ_MAGIC, 16.0f,
+                                           (s16)((i - (count / 2)) * 0x0C00));
+            }
+        }
+    }
+
+    if (Animation_OnFrame(&this->skelAnime, this->unk_194)) {
+        func_808FFDB0(this, play);
+    }
+
+    func_808FFAC8(this, play, 0);
+    func_808FFBBC(this, play, 0);
+}
+
+void BossGanon2_SetupFireBreath(BossGanon2* this, PlayState* play) {
+    Animation_MorphToLoop(&this->skelAnime, &gGanonGuardIdleAnim, -5.0f);
+    this->actionFunc = BossGanon2_FireBreath;
+    this->unk_1A2[0] = GANON2_ENRAGED(this) ? 75 : 55;
+    this->boRangedCooldown = GANON2_ENRAGED(this) ? 130 : 210;
+    this->unk_336 = 1;
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_ROAR);
+}
+
+void BossGanon2_FireBreath(BossGanon2* this, PlayState* play) {
+    Vec3f castPos;
+
+    SkelAnime_Update(&this->skelAnime);
+    Math_ApproachZeroF(&this->actor.speedXZ, 0.5f, 1.0f);
+    Math_ApproachS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 4, 0x400);
+    this->actor.world.rot.y = this->actor.shape.rot.y;
+
+    if ((this->unk_1A2[0] > 12) && ((this->unk_1A2[0] % 4) == 0)) {
+        BossGanon2_GetCastPos(this, &castPos);
+        BossGanon2_SpawnProjectile(this, play, &castPos, BO_G2_PROJ_FIRE, 15.0f, (s16)Rand_CenteredFloat(2600.0f));
+        BossGanon2_SpawnProjectile(this, play, &castPos, BO_G2_PROJ_FIRE, 17.0f, (s16)Rand_CenteredFloat(2600.0f));
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_FIRE - SFX_FLAG);
+    }
+
+    if (this->unk_1A2[0] == 0) {
+        func_808FFDB0(this, play);
+    }
+
+    func_808FFAC8(this, play, 0);
+    func_808FFBBC(this, play, 0);
 }
 
 void func_80900818(BossGanon2* this, PlayState* play) {
@@ -1464,7 +1797,7 @@ void func_80900890(BossGanon2* this, PlayState* play) {
             if (Animation_OnFrame(&this->skelAnime, this->unk_194)) {
                 func_808FFDB0(this, play);
                 if (this->unk_334 == 0) {
-                    this->actor.colChkInfo.health = 25;
+                    this->actor.colChkInfo.health = BO_HP(25);
                 }
                 this->unk_336 = 1;
             }
@@ -1961,7 +2294,7 @@ void func_80902524(BossGanon2* this, PlayState* play) {
                     Audio_StopSfxById(NA_SE_EN_MGANON_UNARI);
                     this->actor.colChkInfo.health -= 2;
                     temp_v0_4 = this->actor.colChkInfo.health;
-                    if (temp_v0_4 < 0x15 && this->unk_334 == 0) {
+                    if (temp_v0_4 < BO_HP(0x15) && this->unk_334 == 0) {
                         func_80900818(this, play);
                     } else {
                         if (temp_v0_4 <= 0) {
@@ -1995,7 +2328,7 @@ void func_80902524(BossGanon2* this, PlayState* play) {
             }
             this->actor.colChkInfo.health -= phi_v1_2;
             temp_v0_4 = this->actor.colChkInfo.health;
-            if ((temp_v0_4 < 0x15) && (this->unk_334 == 0)) {
+            if ((temp_v0_4 < BO_HP(0x15)) && (this->unk_334 == 0)) {
                 func_80900818(this, play);
             } else if ((temp_v0_4 <= 0) && (phi_v1_2 >= 2)) {
                 func_80901020(this, play);
@@ -2031,6 +2364,10 @@ void BossGanon2_Update(Actor* thisx, PlayState* play) {
     this->unk_19C++;
     Actor_SetScale(&this->actor, 0.01f);
     this->actionFunc(this, play);
+    if (this->boRangedCooldown != 0) {
+        this->boRangedCooldown--;
+    }
+
     for (i = 0; i < ARRAY_COUNT(this->unk_1A2); i++) {
         if (this->unk_1A2[i] != 0) {
             this->unk_1A2[i]--;

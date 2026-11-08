@@ -1,5 +1,6 @@
 #include "z_en_m_thunder.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
+#include "overlays/ovl_Arrow_Light/ovl_Arrow_Light.h"
 
 #define FLAGS 0
 
@@ -60,10 +61,202 @@ void func_80A9EFE0(EnMThunder* this, EnMThunderActionFunc actionFunc) {
     this->actionFunc = actionFunc;
 }
 
+/* ---------------------------------------------------------------------------------------------------------------
+ * Master Sword beam (Enhancements > Items > Master Sword Beam)
+ *
+ * Like A Link to the Past: while Link's hearts are full, every normal Master Sword slash fires a spinning beam of
+ * light. Only one beam flies at a time. It hits exactly like a Master Sword slash (same damage flags, same damage), so
+ * every enemy takes the damage its own damage table gives the Master Sword. Drawn with the Light Arrow's glow, so it
+ * needs no new assets.
+ * --------------------------------------------------------------------------------------------------------------- */
+
+#define SWORD_BEAM_SPEED 22.0f
+#define SWORD_BEAM_LIFE 26 // frames, about 570 units of range
+
+static ColliderCylinderInit sSwordBeamCylinderInit = {
+    {
+        COLTYPE_NONE,
+        AT_ON | AT_TYPE_PLAYER,
+        AC_NONE,
+        OC1_NONE,
+        OC2_TYPE_1,
+        COLSHAPE_CYLINDER,
+    },
+    {
+        ELEMTYPE_UNK2,
+        { DMG_SLASH_MASTER, 0x00, 0x02 },
+        { 0xFFCFFFFF, 0x00, 0x00 },
+        TOUCH_ON | TOUCH_SFX_NORMAL,
+        BUMP_NONE,
+        OCELEM_NONE,
+    },
+    { 28, 36, -18, { 0, 0, 0 } },
+};
+
+static s32 EnMThunder_IsSwordBeam(EnMThunder* this) {
+    return this->actor.params == ENMTHUNDER_SWORD_BEAM_PARAMS;
+}
+
+static s32 EnMThunder_SwordBeamFlying(PlayState* play) {
+    Actor* actor = play->actorCtx.actorLists[ACTORCAT_ITEMACTION].head;
+
+    while (actor != NULL) {
+        if ((actor->id == ACTOR_EN_M_THUNDER) && (actor->params == ENMTHUNDER_SWORD_BEAM_PARAMS) &&
+            (actor->update != NULL)) {
+            return true;
+        }
+        actor = actor->next;
+    }
+    return false;
+}
+
+void EnMThunder_TrySwordBeam(PlayState* play, Player* player) {
+    Vec3f pos;
+    s16 pitch = 0;
+    s16 yaw;
+
+    if ((play == NULL) || (player == NULL) || (player->actor.id != ACTOR_PLAYER)) {
+        return;
+    }
+    if (!CVarGetInteger(CVAR_ENHANCEMENT("MasterSwordBeam"), 1)) {
+        return;
+    }
+    if (player->heldItemAction != PLAYER_IA_SWORD_MASTER) {
+        return;
+    }
+    // Normal slashes, stabs and combo finishers only: jump attacks and spin attacks stay vanilla
+    if (!((player->meleeWeaponAnimation <= PLAYER_MWA_STAB_COMBO_2H) ||
+          (player->meleeWeaponAnimation == PLAYER_MWA_BACKSLASH_RIGHT) ||
+          (player->meleeWeaponAnimation == PLAYER_MWA_BACKSLASH_LEFT))) {
+        return;
+    }
+    if (gSaveContext.health < gSaveContext.healthCapacity) {
+        return;
+    }
+    if (EnMThunder_SwordBeamFlying(play)) {
+        return;
+    }
+
+    yaw = player->actor.shape.rot.y;
+    pos = player->bodyPartsPos[PLAYER_BODYPART_WAIST];
+    pos.x += Math_SinS(yaw) * 25.0f;
+    pos.y += 12.0f;
+    pos.z += Math_CosS(yaw) * 25.0f;
+
+    // When locked on, aim up or down at the target
+    if (player->focusActor != NULL) {
+        pitch = Math_Vec3f_Pitch(&pos, &player->focusActor->focus.pos);
+        pitch = CLAMP(pitch, -0x2000, 0x2000);
+    }
+
+    Actor_Spawn(&play->actorCtx, play, ACTOR_EN_M_THUNDER, pos.x, pos.y, pos.z, pitch, yaw, 0,
+                ENMTHUNDER_SWORD_BEAM_PARAMS);
+}
+
+static void EnMThunder_SwordBeamInit(EnMThunder* this, PlayState* play) {
+    Collider_InitCylinder(play, &this->collider);
+    Collider_SetCylinder(play, &this->collider, &this->actor, &sSwordBeamCylinderInit);
+    Lights_PointNoGlowSetInfo(&this->lightInfo, this->actor.world.pos.x, this->actor.world.pos.y,
+                              this->actor.world.pos.z, 170, 255, 255, 150);
+    this->lightNode = LightContext_InsertLight(play, &play->lightCtx, &this->lightInfo);
+
+    this->actor.shape.rot = this->actor.world.rot;
+    this->actor.velocity.x = Math_CosS(this->actor.world.rot.x) * Math_SinS(this->actor.world.rot.y) * SWORD_BEAM_SPEED;
+    this->actor.velocity.y = -Math_SinS(this->actor.world.rot.x) * SWORD_BEAM_SPEED;
+    this->actor.velocity.z = Math_CosS(this->actor.world.rot.x) * Math_CosS(this->actor.world.rot.y) * SWORD_BEAM_SPEED;
+    this->actor.room = -1;
+    this->actor.flags |= ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED;
+    this->beamTimer = SWORD_BEAM_LIFE;
+    this->beamSpin = 0;
+    this->unk_1CA = 0;
+    Actor_SetScale(&this->actor, 0.01f);
+    Audio_PlayActorSound2(&this->actor, NA_SE_IT_ROLLING_CUT_LV1);
+}
+
+static void EnMThunder_SwordBeamBurst(EnMThunder* this, PlayState* play) {
+    EffectSsHitMark_SpawnFixedScale(play, 0, &this->actor.world.pos);
+    Actor_Kill(&this->actor);
+}
+
+static void EnMThunder_SwordBeamUpdate(EnMThunder* this, PlayState* play) {
+    static Color_RGBA8 sSparklePrim = { 255, 255, 255, 255 };
+    static Color_RGBA8 sSparkleEnv = { 60, 160, 255, 0 };
+    static Vec3f sZeroVec = { 0.0f, 0.0f, 0.0f };
+    Vec3f sparklePos;
+
+    if (Play_InCsMode(play) || (this->beamTimer <= 0)) {
+        Actor_Kill(&this->actor); // out of range: just vanishes
+        return;
+    }
+    this->beamTimer--;
+
+    // Anything the beam touched last frame (an enemy, a shield, a switch) ends it
+    if (this->collider.base.atFlags & (AT_HIT | AT_BOUNCED)) {
+        EnMThunder_SwordBeamBurst(this, play);
+        return;
+    }
+
+    Actor_UpdatePos(&this->actor);
+    Actor_UpdateBgCheckInfo(play, &this->actor, 15.0f, 15.0f, 15.0f, 7);
+    if (this->actor.bgCheckFlags & (1 | 8 | 0x10)) { // floor, wall or ceiling
+        EnMThunder_SwordBeamBurst(this, play);
+        return;
+    }
+
+    this->beamSpin += 0x1C00;
+
+    Collider_UpdateCylinder(&this->actor, &this->collider);
+    CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
+
+    sparklePos.x = this->actor.world.pos.x + Rand_CenteredFloat(20.0f);
+    sparklePos.y = this->actor.world.pos.y + Rand_CenteredFloat(20.0f);
+    sparklePos.z = this->actor.world.pos.z + Rand_CenteredFloat(20.0f);
+    EffectSsKiraKira_SpawnSmall(play, &sparklePos, &sZeroVec, &sZeroVec, &sSparklePrim, &sSparkleEnv);
+
+    Lights_PointNoGlowSetInfo(&this->lightInfo, this->actor.world.pos.x, this->actor.world.pos.y,
+                              this->actor.world.pos.z, 170, 255, 255, 150);
+}
+
+static void EnMThunder_SwordBeamDraw(EnMThunder* this, PlayState* play) {
+    u32 frames = play->state.frames;
+    s32 i;
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+    gDPSetPrimColor(POLY_XLU_DISP++, 0x80, 0x80, 200, 255, 255, 255);
+    gDPSetEnvColor(POLY_XLU_DISP++, 0, 110, 255, 128);
+
+    // Two crossed streaks of the Light Arrow glow, spinning about the direction of travel
+    for (i = 0; i < 2; i++) {
+        Matrix_Translate(this->actor.world.pos.x, this->actor.world.pos.y, this->actor.world.pos.z, MTXMODE_NEW);
+        Matrix_RotateY(this->actor.shape.rot.y * (M_PI / 0x8000), MTXMODE_APPLY);
+        Matrix_RotateX(this->actor.shape.rot.x * (M_PI / 0x8000), MTXMODE_APPLY);
+        Matrix_RotateZ((this->beamSpin + (i * 0x4000)) * (M_PI / 0x8000), MTXMODE_APPLY);
+        Matrix_Scale(0.01f, 0.01f, 0.01f, MTXMODE_APPLY);
+        Matrix_Scale((i == 0) ? 2.4f : 1.6f, (i == 0) ? 4.5f : 3.0f, 2.0f, MTXMODE_APPLY);
+        Matrix_Translate(0.0f, -700.0f, 0.0f, MTXMODE_APPLY);
+        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_XLU_DISP++, sMaterialDL);
+        gSPDisplayList(POLY_XLU_DISP++,
+                       Gfx_TwoTexScrollEx(play->state.gfxCtx, 0, 511 - (frames * 5) % 512, 0, 4, 32, 1,
+                                          511 - (frames * 10) % 512, 511 - (frames * 30) % 512, 8, 16, -5, 0, -10,
+                                          -30));
+        gSPDisplayList(POLY_XLU_DISP++, sModelDL);
+    }
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 void EnMThunder_Init(Actor* thisx, PlayState* play2) {
     PlayState* play = play2;
     EnMThunder* this = (EnMThunder*)thisx;
     Player* player = GET_PLAYER(play);
+
+    if (EnMThunder_IsSwordBeam(this)) {
+        EnMThunder_SwordBeamInit(this, play);
+        return;
+    }
 
     Collider_InitCylinder(play, &this->collider);
     Collider_SetCylinder(play, &this->collider, &this->actor, &D_80AA0420);
@@ -114,6 +307,12 @@ void EnMThunder_Init(Actor* thisx, PlayState* play2) {
 
 void EnMThunder_Destroy(Actor* thisx, PlayState* play) {
     EnMThunder* this = (EnMThunder*)thisx;
+
+    if (EnMThunder_IsSwordBeam(this)) {
+        Collider_DestroyCylinder(play, &this->collider);
+        LightContext_RemoveLight(play, &play->lightCtx, this->lightNode);
+        return;
+    }
 
     if (this->unk_1CA != 0) {
         Magic_Reset(play);
@@ -307,6 +506,11 @@ void EnMThunder_Update(Actor* thisx, PlayState* play) {
     f32 blueRadius;
     s32 redGreen;
 
+    if (EnMThunder_IsSwordBeam(this)) {
+        EnMThunder_SwordBeamUpdate(this, play);
+        return;
+    }
+
     this->actionFunc(this, play);
     func_80A9F314(play, this->unk_1BC);
     blueRadius = this->unk_1AC;
@@ -323,6 +527,11 @@ void EnMThunder_Draw(Actor* thisx, PlayState* play2) {
     Player* player = GET_PLAYER(play);
     f32 phi_f14;
     s32 phi_t1;
+
+    if (EnMThunder_IsSwordBeam(this)) {
+        EnMThunder_SwordBeamDraw(this, play);
+        return;
+    }
 
     OPEN_DISPS(play->state.gfxCtx);
     Gfx_SetupDL_25Xlu(play->state.gfxCtx);

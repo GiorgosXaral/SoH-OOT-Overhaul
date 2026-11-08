@@ -28,6 +28,10 @@ void Custom_EnMThunder_Update(Actor* thisx, PlayState* play) {
 
 void OnEnMThunderInitReplaceUpdateWithCustom(void* thunder) {
     EnMThunder* enMThunder = (EnMThunder*)thunder;
+    // The Master Sword beam has its own update (and never darkens the screen)
+    if (enMThunder->actor.params == ENMTHUNDER_SWORD_BEAM_PARAMS) {
+        return;
+    }
     enMThunder->actor.update = Custom_EnMThunder_Update;
 }
 

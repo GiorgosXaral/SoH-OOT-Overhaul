@@ -175,6 +175,7 @@ typedef struct BossTw {
     /* 0x06A8 */ char unused_6A8[4];
     /* 0x06AC */ f32 subCamYaw;
     /* 0x06B0 */ f32 subCamYawStep;
-} BossTw; // size = 0x06B4
+    s16 boBlastCombo; // Boss Overhaul: Twinrova's chained blast counter
+} BossTw; // size = 0x06B4 (vanilla)
 
 #endif

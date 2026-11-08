@@ -110,7 +110,7 @@ typedef struct BossGoma {
     /* 0x019E */ s16 eyeIrisRotX;
     /* 0x01A0 */ s16 eyeIrisRotY;
     /* 0x01A2 */ s16 unusedTimer;
-    /* 0x01A4 */ s16 childrenGohmaState[3]; // 0 not spawned, 1 spawned, -1 dead (-1 set by child gohma)
+    /* 0x01A4 */ s16 childrenGohmaState[6]; // 0 not spawned, 1 spawned, -1 dead (-1 set by child gohma); only the first 3 (5 with Boss Overhaul) are used
     /* 0x01AA */ s16 tailLimbsScaleTimers[4];
     /* 0x01B2 */ s16 spawnGohmasActionTimer;
     /* 0x01B4 */ s16 eyeState;

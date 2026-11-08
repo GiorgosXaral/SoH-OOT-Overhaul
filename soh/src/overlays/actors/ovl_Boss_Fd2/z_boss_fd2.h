@@ -44,7 +44,7 @@ typedef enum {
     /* 1 */ FD2_ACTION_STATE,
     /* 2 */ FD2_UNK_TIMER,
     /* 3 */ FD2_VAR_TIMER,
-    /* 4 */ FD2_UNUSED_4,
+    /* 4 */ FD2_BONUS_ATTACK, // Boss Overhaul: number of repeated attacks used during the current emergence
     /* 5 */ FD2_UNUSED_5,
     /* 6 */ FD2_BLINK_TIMER,
     /* 7 */ FD2_SCREAM_TIMER,

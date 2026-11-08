@@ -11,6 +11,7 @@
 #include "vt.h"
 #include "soh/frame_interpolation.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "boss_overhaul.h"
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -217,10 +218,11 @@ void BossFd2_SetupEmerge(BossFd2* this, PlayState* play) {
     this->actor.world.pos.x = sHoleLocations[temp_rand].x;
     this->actor.world.pos.z = sHoleLocations[temp_rand].z;
     this->work[FD2_ACTION_STATE] = 0;
+    this->work[FD2_BONUS_ATTACK] = 0;
     osSyncPrintf("UP INIT 2\n");
     this->timers[0] = 10;
     if (bossFd != NULL) {
-        health = bossFd->actor.colChkInfo.health;
+        health = BossFd_GetPhaseHealth(bossFd);
         if (health >= 18) {
             this->work[FD2_FAKEOUT_COUNT] = 0;
         } else if (health >= 12) {
@@ -257,7 +259,7 @@ void BossFd2_Emerge(BossFd2* this, PlayState* play) {
                 this->work[FD2_ACTION_STATE] = 1;
                 this->work[FD2_HOLE_COUNTER]++;
                 this->actor.world.pos.y = -200.0f;
-                health = bossFd->actor.colChkInfo.health;
+                health = BossFd_GetPhaseHealth(bossFd);
                 if (health == 24) {
                     holeTime = 30;
                 } else if (health >= 18) {
@@ -298,6 +300,16 @@ void BossFd2_Emerge(BossFd2* this, PlayState* play) {
                         this->leftMane.pos[i].z += Rand_CenteredFloat(100.0f);
                     }
                     bossFd->work[BFD_SPLASH_TIMER] = 5;
+                    if (BO_ATTACKS_ENABLED()) {
+                        // Boss Overhaul: Volvagia's roar shakes rocks loose from the ceiling above Link
+                        BossFd_SpawnBonusRock(bossFd, play, player->actor.world.pos.x, player->actor.world.pos.z);
+                        if (BossFd_IsEnraged(bossFd)) {
+                            BossFd_SpawnBonusRock(bossFd, play, player->actor.world.pos.x + Rand_CenteredFloat(200.0f),
+                                                  player->actor.world.pos.z + Rand_CenteredFloat(200.0f));
+                            BossFd_SpawnBonusRock(bossFd, play, player->actor.world.pos.x + Rand_CenteredFloat(200.0f),
+                                                  player->actor.world.pos.z + Rand_CenteredFloat(200.0f));
+                        }
+                    }
                 }
             }
             break;
@@ -323,7 +335,7 @@ void BossFd2_SetupIdle(BossFd2* this, PlayState* play) {
     osSyncPrintf("UP INIT 1\n");
     Animation_PlayLoop(&this->skelAnime, &gHoleVolvagiaTurnAnim);
     this->actionFunc = BossFd2_Idle;
-    health = bossFd->actor.colChkInfo.health;
+    health = BossFd_GetPhaseHealth(bossFd);
     if (health == 24) {
         idleTime = 50;
     } else if (health >= 18) {
@@ -384,7 +396,7 @@ void BossFd2_Burrow(BossFd2* this, PlayState* play) {
     } else {
         Math_ApproachF(&this->actor.world.pos.y, -100.0f, 1.0f, 10.0f);
         if (this->timers[0] == 0) {
-            if ((this->work[FD2_HOLE_COUNTER] >= 3) && ((s8)bossFd->actor.colChkInfo.health < 24)) {
+            if ((this->work[FD2_HOLE_COUNTER] >= 3) && (BossFd_GetPhaseHealth(bossFd) < 24)) {
                 this->work[FD2_HOLE_COUNTER] = 0;
                 this->actionFunc = BossFd2_Wait;
                 bossFd->handoffSignal = FD2_SIGNAL_FLY;
@@ -417,7 +429,13 @@ void BossFd2_BreatheFire(BossFd2* this, PlayState* play) {
 
     SkelAnime_Update(&this->skelAnime);
     if (Animation_OnFrame(&this->skelAnime, this->fwork[FD2_END_FRAME])) {
-        BossFd2_SetupBurrow(this, play);
+        if ((this->work[FD2_BONUS_ATTACK] == 0) && (bossFd != NULL) && BossFd_IsEnraged(bossFd)) {
+            // Boss Overhaul: an enraged Volvagia breathes fire a second time before burrowing
+            this->work[FD2_BONUS_ATTACK]++;
+            BossFd2_SetupBreatheFire(this, play);
+        } else {
+            BossFd2_SetupBurrow(this, play);
+        }
     }
     if ((25.0f <= this->skelAnime.curFrame) && (this->skelAnime.curFrame < 70.0f)) {
         if (this->skelAnime.curFrame == 25.0f) {
@@ -517,7 +535,13 @@ void BossFd2_ClawSwipe(BossFd2* this, PlayState* play) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_VALVAISA_SW_NAIL);
     }
     if (Animation_OnFrame(&this->skelAnime, this->fwork[FD2_END_FRAME])) {
-        BossFd2_SetupBurrow(this, play);
+        if (BO_ATTACKS_ENABLED() && (this->work[FD2_BONUS_ATTACK] == 0) && (this->actor.xzDistToPlayer < 250.0f)) {
+            // Boss Overhaul: if Link is still within reach, Volvagia swipes again
+            this->work[FD2_BONUS_ATTACK]++;
+            BossFd2_SetupClawSwipe(this, play);
+        } else {
+            BossFd2_SetupBurrow(this, play);
+        }
     }
 }
 
@@ -845,7 +869,7 @@ void BossFd2_CollisionCheck(BossFd2* this, PlayState* play) {
         if (!bossFd->faceExposed) {
             if (hurtbox->toucher.dmgFlags & 0x40000040) {
                 bossFd->actor.colChkInfo.health -= 2;
-                if ((s8)bossFd->actor.colChkInfo.health <= 2) {
+                if ((s8)bossFd->actor.colChkInfo.health <= BO_HP(2)) {
                     bossFd->actor.colChkInfo.health = 1;
                 }
                 bossFd->faceExposed = true;
@@ -882,7 +906,7 @@ void BossFd2_CollisionCheck(BossFd2* this, PlayState* play) {
             if (hurtbox->toucher.dmgFlags & 0x80) {
                 damage = 0;
             }
-            if (((s8)bossFd->actor.colChkInfo.health > 2) || canKill) {
+            if (((s8)bossFd->actor.colChkInfo.health > BO_HP(2)) || canKill) {
                 bossFd->actor.colChkInfo.health -= damage;
                 osSyncPrintf(VT_FGCOL(GREEN));
                 osSyncPrintf("damage   %d\n", damage);

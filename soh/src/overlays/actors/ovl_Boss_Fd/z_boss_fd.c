@@ -16,8 +16,9 @@
 #include "soh/frame_interpolation.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "boss_overhaul.h"
 
-#define FLAGS                                                                                 \
+#define FLAGS                                                                               \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
      ACTOR_FLAG_DRAW_CULLING_DISABLED)
 
@@ -216,7 +217,7 @@ void BossFd_Init(Actor* thisx, PlayState* play) {
         }
     }
 
-    this->actor.colChkInfo.health = 24;
+    this->actor.colChkInfo.health = BO_HP(24);
     this->skinSegments = 18;
     if (this->introState == BFD_CS_NONE) {
         this->actionFunc = BossFd_Wait;
@@ -249,6 +250,49 @@ void BossFd_Destroy(Actor* thisx, PlayState* play) {
 
 s32 BossFd_IsFacingLink(BossFd* this) {
     return ABS((s16)(this->actor.yawTowardsPlayer - this->actor.world.rot.y)) < 0x2000;
+}
+
+/**
+ * Boss Overhaul: Volvagia's health expressed on the vanilla 24 point scale, so that the phase thresholds keep working
+ * when Double Boss HP is enabled (a doubled 48 / 47 both count as 24, 46 / 45 as 23, and so on).
+ */
+s16 BossFd_GetPhaseHealth(BossFd* this) {
+    s16 health = (s8)this->actor.colChkInfo.health;
+
+    if (BO_HP_ENABLED()) {
+        return (health + 1) / 2;
+    }
+    return health;
+}
+
+/**
+ * Boss Overhaul: Volvagia is enraged in the second half of the fight when extra attacks are enabled.
+ */
+s32 BossFd_IsEnraged(BossFd* this) {
+    return BO_ATTACKS_ENABLED() && (BossFd_GetPhaseHealth(this) <= 12);
+}
+
+/**
+ * Boss Overhaul: drops one of Volvagia's own ceiling rocks (ACTOR_EN_VB_BALL) from the ceiling onto (x, z).
+ */
+void BossFd_SpawnBonusRock(BossFd* this, PlayState* play, f32 x, f32 z) {
+    EnVbBall* rock = (EnVbBall*)Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_VB_BALL, x, 1000.0f, z,
+                                                   0, 0, (s16)Rand_ZeroFloat(50.0f) + 130, 100);
+    s16 i;
+
+    if (rock != NULL) {
+        for (i = 0; i < 10; i++) {
+            Vec3f debrisVel = { 0.0f, 0.0f, 0.0f };
+            Vec3f debrisAccel = { 0.0f, -1.0f, 0.0f };
+            Vec3f debrisPos;
+
+            debrisPos.x = Rand_CenteredFloat(300.0f) + rock->actor.world.pos.x;
+            debrisPos.y = Rand_CenteredFloat(300.0f) + rock->actor.world.pos.y;
+            debrisPos.z = Rand_CenteredFloat(300.0f) + rock->actor.world.pos.z;
+
+            BossFd_SpawnDebris(this->effects, &debrisPos, &debrisVel, &debrisAccel, (s16)Rand_ZeroFloat(15.0f) + 20);
+        }
+    }
 }
 
 void BossFd_SetupFly(BossFd* this, PlayState* play) {
@@ -600,7 +644,8 @@ void BossFd_Fly(BossFd* this, PlayState* play) {
                         this->work[BFD_FLY_COUNT]++;
                         if (this->work[BFD_FLY_COUNT] & 1) {
                             this->work[BFD_ACTION_STATE] = BOSSFD_FLY_CHASE;
-                            this->timers[0] = 300;
+                            // Boss Overhaul: longer chase
+                            this->timers[0] = BO_ATTACKS_ENABLED() ? 400 : 300;
                             this->fwork[BFD_TURN_RATE_MAX] = 900.0f;
                             this->fwork[BFD_TARGET_Y_OFFSET] = 300.0f;
                             this->work[BFD_UNK_234] = this->work[BFD_UNK_236] = 0;
@@ -660,7 +705,8 @@ void BossFd_Fly(BossFd* this, PlayState* play) {
             if (this->actor.world.pos.y > 700.0f) {
                 this->work[BFD_ACTION_STATE] = BOSSFD_DROP_ROCKS;
                 this->timers[0] = 25;
-                this->timers[2] = 150;
+                // Boss Overhaul: longer rock storm
+                this->timers[2] = BO_ATTACKS_ENABLED() ? 210 : 150;
                 this->work[BFD_CEILING_TARGET] = 0;
             }
             break;
@@ -697,7 +743,8 @@ void BossFd_Fly(BossFd* this, PlayState* play) {
             if (this->timers[2] == 0) {
                 this->work[BFD_ACTION_STATE] = BOSSFD_FLY_MAIN;
                 this->timers[0] = 0;
-                this->work[BFD_START_ATTACK] = false;
+                // Boss Overhaul: when enraged, the rock storm flows straight into a chase (rocks -> chase combo)
+                this->work[BFD_START_ATTACK] = BossFd_IsEnraged(this);
             }
             break;
         case BOSSFD_FLY_CHASE:
@@ -707,11 +754,20 @@ void BossFd_Fly(BossFd* this, PlayState* play) {
             this->targetPosition.y = player->actor.world.pos.y + temp_y + 30.0f;
             this->targetPosition.z = player->actor.world.pos.z;
             this->fwork[BFD_FLY_WOBBLE_AMP] = 0.0f;
-            if (((this->timers[0] % 64) == 0) && (this->timers[0] < 450)) {
+            if (((this->timers[0] % (BO_ATTACKS_ENABLED() ? (BossFd_IsEnraged(this) ? 32 : 48) : 64)) == 0) &&
+                (this->timers[0] < 450)) {
                 this->work[BFD_ROAR_TIMER] = 40;
                 if (BossFd_IsFacingLink(this)) {
                     this->fireBreathTimer = 20;
                 }
+                // Boss Overhaul: an enraged Volvagia also calls a rock down on top of Link with every roar
+                if (BossFd_IsEnraged(this) && (this->timers[0] != 0)) {
+                    BossFd_SpawnBonusRock(this, play, player->actor.world.pos.x, player->actor.world.pos.z);
+                }
+            }
+            if (BossFd_IsEnraged(this)) {
+                // Boss Overhaul: faster chase
+                this->fwork[BFD_FLY_SPEED] = 7.0f;
             }
             if ((this->work[BFD_DAMAGE_FLASH_TIMER] != 0) || (this->timers[0] == 0) ||
                 (player->actor.world.pos.y < 70.0f)) {
@@ -1299,8 +1355,8 @@ void BossFd_CollisionCheck(BossFd* this, PlayState* play) {
         if (hurtbox->toucher.dmgFlags & 0x1000) {
             this->actor.colChkInfo.health -= 2;
         }
-        if ((s8)this->actor.colChkInfo.health <= 2) {
-            this->actor.colChkInfo.health = 2;
+        if ((s8)this->actor.colChkInfo.health <= BO_HP(2)) {
+            this->actor.colChkInfo.health = BO_HP(2);
         }
         this->work[BFD_DAMAGE_FLASH_TIMER] = 10;
         this->work[BFD_INVINC_TIMER] = 20;
@@ -1368,7 +1424,8 @@ void BossFd_Update(Actor* thisx, PlayState* play) {
 
     if (this->work[BFD_ROCK_TIMER] != 0) {
         this->work[BFD_ROCK_TIMER]--;
-        if ((this->work[BFD_ROCK_TIMER] % 16) == 0) {
+        // Boss Overhaul: denser rock storm
+        if ((this->work[BFD_ROCK_TIMER] % (BO_ATTACKS_ENABLED() ? (BossFd_IsEnraged(this) ? 8 : 12) : 16)) == 0) {
             EnVbBall* bossFdRock = (EnVbBall*)Actor_SpawnAsChild(
                 &play->actorCtx, &this->actor, play, ACTOR_EN_VB_BALL, this->actor.world.pos.x, 1000.0f,
                 this->actor.world.pos.z, 0, 0, (s16)Rand_ZeroFloat(50.0f) + 130, 100);

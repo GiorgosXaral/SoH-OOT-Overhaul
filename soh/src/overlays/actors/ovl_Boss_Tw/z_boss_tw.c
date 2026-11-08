@@ -8,6 +8,7 @@
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
 #include <string.h>
+#include "boss_overhaul.h"
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -24,6 +25,10 @@ typedef enum {
     /* 0x68 */ TW_DEATHBALL_KOTAKE,
     /* 0x69 */ TW_DEATHBALL_KOUME
 } TwinrovaType;
+
+// Boss Overhaul: Twinrova is enraged when at or below half health (and extra attacks are enabled).
+#define TW_ENRAGED() \
+    (BO_ATTACKS_ENABLED() && (sTwinrovaPtr != NULL) && BO_BELOW_HALF((s8)sTwinrovaPtr->actor.colChkInfo.health, 24))
 
 void BossTw_Init(Actor* thisx, PlayState* play);
 void BossTw_Destroy(Actor* thisx, PlayState* play);
@@ -515,7 +520,7 @@ void BossTw_Init(Actor* thisx, PlayState* play2) {
         // Twinrova
         Collider_SetCylinder(play, &this->collider, &this->actor, &sCylinderInitTwinrova);
         this->actor.naviEnemyId = 0x5B;
-        this->actor.colChkInfo.health = 24;
+        this->actor.colChkInfo.health = BO_HP(24);
         this->actor.update = BossTw_TwinrovaUpdate;
         this->actor.draw = BossTw_TwinrovaDraw;
         SkelAnime_InitFlex(play, &this->skelAnime, &gTwinrovaSkel, &gTwinrovaTPoseAnim, NULL, NULL, 0);
@@ -643,6 +648,11 @@ void BossTw_SetupFlyTo(BossTw* this, PlayState* play) {
         this->timers[0] = 200;
         this->work[CAN_SHOOT] = true;
     }
+
+    if (BO_ATTACKS_ENABLED() && (Rand_ZeroOne() < 0.5f)) {
+        // Boss Overhaul: the sisters fire their beams much more often
+        this->work[CAN_SHOOT] = true;
+    }
 }
 
 void BossTw_FlyTo(BossTw* this, PlayState* play) {
@@ -670,7 +680,7 @@ void BossTw_FlyTo(BossTw* this, PlayState* play) {
     Math_ApproachS(&this->actor.shape.rot.y, yawTarget, 0xA, this->rotateSpeed);
     Math_ApproachS(&this->actor.shape.rot.x, pitchTarget, 0xA, this->rotateSpeed);
     Math_ApproachF(&this->rotateSpeed, 4096.0f, 1.0f, 100.0f);
-    Math_ApproachF(&this->actor.speedXZ, 10.0f, 1.0f, 1.0f);
+    Math_ApproachF(&this->actor.speedXZ, BO_ATTACKS_ENABLED() ? 13.0f : 10.0f, 1.0f, 1.0f);
     Actor_UpdateVelocityXYZ(&this->actor);
     Actor_UpdatePos(&this->actor);
 
@@ -1454,7 +1464,7 @@ void BossTw_SetupWait(BossTw* this, PlayState* play) {
 void BossTw_Wait(BossTw* this, PlayState* play) {
     if ((this->actor.params == TW_TWINROVA) && (sKoumePtr->actionFunc == BossTw_FlyTo) &&
         (sKotakePtr->actionFunc == BossTw_FlyTo) &&
-        ((sKoumePtr->actor.colChkInfo.health + sKotakePtr->actor.colChkInfo.health) >= 4)) {
+        ((sKoumePtr->actor.colChkInfo.health + sKotakePtr->actor.colChkInfo.health) >= BO_HP(4))) {
 
         BossTw_TwinrovaSetupMergeCS(this, play);
         BossTw_SetupMergeCS(sKotakePtr, play);
@@ -3106,7 +3116,7 @@ void BossTw_TwinrovaUpdate(Actor* thisx, PlayState* play2) {
             }
 
             if (!(info->toucher.dmgFlags & DMG_HOOKSHOT)) {
-                if (((s8)this->actor.colChkInfo.health < 3) && !swordDamage) {
+                if (((s8)this->actor.colChkInfo.health <= BO_HP(2)) && !swordDamage) {
                     damage = 0;
                 }
 
@@ -3905,7 +3915,8 @@ void BossTw_BlastFire(BossTw* this, PlayState* play) {
                     // pitch
                     distXZ = sqrtf(SQ(xDiff) + SQ(zDiff));
                     this->actor.world.rot.x = Math_FAtan2F(yDiff, distXZ) * (32768 / M_PI);
-                    this->actor.speedXZ = 20.0f;
+                    // Boss Overhaul: faster blasts
+                    this->actor.speedXZ = BO_ATTACKS_ENABLED() ? (TW_ENRAGED() ? 30.0f : 26.0f) : 20.0f;
 
                     for (i = 0; i < 50; i++) {
                         this->blastTailPos[i] = this->actor.world.pos;
@@ -4093,7 +4104,8 @@ void BossTw_BlastIce(BossTw* this, PlayState* play) {
                     this->actor.world.rot.y = Math_FAtan2F(xDiff, zDiff) * (32768 / M_PI);
                     xzDist = sqrtf(SQ(xDiff) + SQ(zDiff));
                     this->actor.world.rot.x = Math_FAtan2F(yDiff, xzDist) * (32768 / M_PI);
-                    this->actor.speedXZ = 20.0f;
+                    // Boss Overhaul: faster blasts
+                    this->actor.speedXZ = BO_ATTACKS_ENABLED() ? (TW_ENRAGED() ? 30.0f : 26.0f) : 20.0f;
                     for (i = 0; i < 50; i++) {
                         this->blastTailPos[i] = this->actor.world.pos;
                     }
@@ -5151,7 +5163,7 @@ void BossTw_TwinrovaChargeBlast(BossTw* this, PlayState* play) {
     Math_ApproachS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 5, 0x1000);
 
     if (Animation_OnFrame(&this->skelAnime, this->workf[ANIM_SW_TGT])) {
-        if ((s8)this->actor.colChkInfo.health < 10) {
+        if ((s8)this->actor.colChkInfo.health < BO_HP(10)) {
             sTwinrovaBlastType = Rand_ZeroFloat(1.99f);
         } else {
             if (++sFixedBlatSeq >= 4) {
@@ -5240,7 +5252,11 @@ void BossTw_TwinrovaDoneBlastShoot(BossTw* this, PlayState* play) {
     SkelAnime_Update(&this->skelAnime);
 
     if (this->timers[1] == 0 && D_8094C870 == 0) {
-        if (sTwinrovaPtr->timers[2] == 0) {
+        if ((sTwinrovaPtr->timers[2] == 0) && TW_ENRAGED() && (this->boBlastCombo == 0)) {
+            // Boss Overhaul: an enraged Twinrova immediately follows up with a second blast before flying away
+            this->boBlastCombo = 1;
+            BossTw_TwinrovaSetupChargeBlast(this, play);
+        } else if (sTwinrovaPtr->timers[2] == 0) {
             BossTw_TwinrovaSetupFly(this, play);
         } else {
             BossTw_TwinrovaSetupLaugh(this, play);
@@ -5384,6 +5400,7 @@ void BossTw_TwinrovaSetupFly(BossTw* this, PlayState* play) {
     yDiff = this->targetPos.y - this->actor.world.pos.y;
     zDiff = this->targetPos.z - this->actor.world.pos.z;
     this->actionFunc = BossTw_TwinrovaFly;
+    this->boBlastCombo = 0;
     this->rotateSpeed = 0.0f;
     this->actor.speedXZ = 0.0f;
     this->actor.world.rot.y = Math_FAtan2F(xDiff, zDiff) * (32768 / M_PI);
@@ -5414,7 +5431,7 @@ void BossTw_TwinrovaFly(BossTw* this, PlayState* play) {
     Math_ApproachS(&this->actor.world.rot.y, yaw, 0xA, this->rotateSpeed);
     Math_ApproachS(&this->actor.shape.rot.y, yaw, 0xA, this->rotateSpeed);
     Math_ApproachF(&this->rotateSpeed, 2000.0f, 1.0f, 100.0f);
-    Math_ApproachF(&this->actor.speedXZ, 30.0f, 1.0f, 2.0f);
+    Math_ApproachF(&this->actor.speedXZ, BO_ATTACKS_ENABLED() ? 36.0f : 30.0f, 1.0f, 2.0f);
     Actor_UpdateVelocityXYZ(&this->actor);
     Math_ApproachF(&this->actor.world.pos.x, this->targetPos.x, 0.1f, fabsf(this->actor.velocity.x) * 1.5f);
     Math_ApproachF(&this->actor.world.pos.y, this->targetPos.y, 0.1f, fabsf(this->actor.velocity.y) * 1.5f);

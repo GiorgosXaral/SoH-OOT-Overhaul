@@ -19,6 +19,8 @@
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
+#include "boss_overhaul.h"
+
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
      ACTOR_FLAG_DRAW_CULLING_DISABLED)
@@ -585,6 +587,34 @@ void BossVa_KillBari(BossVa* this, PlayState* play) {
 
     sFightPhase++;
     BossVa_SetupBariDeath(this);
+}
+
+// Boss Overhaul (Double HP): every Bari survives its first hit. Returns true if the Bari was killed.
+static s32 BossVa_DamageBari(BossVa* this, PlayState* play) {
+    if (BO_HP_ENABLED()) {
+        if (this->hitsTaken == 0) {
+            this->hitsTaken = 1;
+            this->hitFrame = play->gameplayFrames;
+            this->colliderSph.base.acFlags &= ~AC_HIT;
+            Actor_SetColorFilter(&this->actor, 0x4000, 255, 0, 12);
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_BALINADE_DAMAGE);
+            return false;
+        }
+
+        if ((play->gameplayFrames - this->hitFrame) < 10) {
+            // still the same sword swing
+            this->colliderSph.base.acFlags &= ~AC_HIT;
+            return false;
+        }
+    }
+
+    BossVa_KillBari(this, play);
+    return true;
+}
+
+// Boss Overhaul (Extra Attacks): Barinade's core moves faster.
+static f32 BossVa_CoreSpeedScale(void) {
+    return BO_ATTACKS_ENABLED() ? 1.35f : 1.0f;
 }
 
 void BossVa_Init(Actor* thisx, PlayState* play2) {
@@ -1362,7 +1392,7 @@ void BossVa_SetupBodyPhase4(BossVa* this, PlayState* play) {
     this->actor.world.rot.y = this->actor.yawTowardsPlayer;
     this->timer2 = (s16)(Rand_ZeroOne() * 150.0f) + 300;
     sBodyState = 1;
-    sPhase4HP = 4;
+    sPhase4HP = BO_HP(4);
     if (this->actor.shape.yOffset != 0.0f) {
         this->timer = -30;
     }
@@ -1373,6 +1403,7 @@ void BossVa_SetupBodyPhase4(BossVa* this, PlayState* play) {
 
 void BossVa_BodyPhase4(BossVa* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
+    s32 pulsing = false;
     f32 tmpf1;
     EnBoom* boomerang;
 
@@ -1404,7 +1435,7 @@ void BossVa_BodyPhase4(BossVa* this, PlayState* play) {
                     if (sPhase4HP <= 0) {
                         this->timer = 0;
                         sFightPhase++;
-                        sPhase4HP += 3;
+                        sPhase4HP += BO_HP(3);
                         if (sFightPhase >= PHASE_DEATH) {
                             BossVa_SetupBodyDeath(this, play);
                             Enemy_StartFinishingBlow(play, &this->actor);
@@ -1445,7 +1476,8 @@ void BossVa_BodyPhase4(BossVa* this, PlayState* play) {
                 this->actor.world.rot.y = this->actor.yawTowardsPlayer;
                 this->timer2 = (s16)(Rand_ZeroOne() * 150.0f) + 300;
             }
-            Math_SmoothStepToF(&this->actor.speedXZ, ((sFightPhase - PHASE_4 + 1) * 1.5f) + 4.0f, 1.0f, 0.25f, 0.0f);
+            Math_SmoothStepToF(&this->actor.speedXZ, (((sFightPhase - PHASE_4 + 1) * 1.5f) + 4.0f) * BossVa_CoreSpeedScale(),
+                               1.0f, 0.25f, 0.0f);
         }
         this->colliderBody.info.bumper.dmgFlags = 0x10;
     } else {
@@ -1476,7 +1508,8 @@ void BossVa_BodyPhase4(BossVa* this, PlayState* play) {
                 }
                 Math_SmoothStepToS(&this->vaBodySpinRate, 0xFA0, 1, 0x1F4, 0);
                 tmpf1 = sFightPhase - PHASE_4 + 1;
-                Math_SmoothStepToF(&this->actor.speedXZ, (tmpf1 + tmpf1) + 4.0f, 1.0f, 0.25f, 0.0f);
+                Math_SmoothStepToF(&this->actor.speedXZ, ((tmpf1 + tmpf1) + 4.0f) * BossVa_CoreSpeedScale(), 1.0f, 0.25f,
+                                   0.0f);
                 Math_SmoothStepToF(&this->actor.shape.yOffset, 0.0f, 1.0f, 20.0f, 0.0f);
             }
             this->timer++;
@@ -1516,13 +1549,30 @@ void BossVa_BodyPhase4(BossVa* this, PlayState* play) {
         BossVa_Spark(play, this, 1, 100, 15.0f, 10.0f, SPARK_BARI, 11.0f, true);
     }
 
+    if (BO_ATTACKS_ENABLED()) {
+        // Boss Overhaul: periodic overcharge pulse. The core's electric aura expands and shocks everything near it.
+        u32 pulseCycle = play->gameplayFrames % ((sFightPhase >= PHASE_4 + 2) ? 60 : 90);
+
+        if (this->timer == 0 && this->actor.shape.yOffset > -30.0f && pulseCycle < 16) {
+            if (pulseCycle == 0) {
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_BALINADE_THUNDER);
+                BossVa_SetSparkEnv(play);
+            }
+            this->colliderBody.dim.radius = 140;
+            BossVa_Spark(play, this, 3, 110, 90.0f, 30.0f, SPARK_BLAST, 8.0f, true);
+            pulsing = true;
+        } else {
+            this->colliderBody.dim.radius = 55;
+        }
+    }
+
     Actor_UpdateBgCheckInfo(play, &this->actor, 30.0f, 70.0f, 0.0f, 1);
     Collider_UpdateCylinder(&this->actor, &this->colliderBody);
     CollisionCheck_SetOC(play, &play->colChkCtx, &this->colliderBody.base);
     if (this->invincibilityTimer == 0) {
         CollisionCheck_SetAC(play, &play->colChkCtx, &this->colliderBody.base);
     }
-    if ((this->vaBodySpinRate > 0x3E8) || (this->actor.shape.yOffset < -1200.0f)) {
+    if ((this->vaBodySpinRate > 0x3E8) || (this->actor.shape.yOffset < -1200.0f) || pulsing) {
         CollisionCheck_SetAT(play, &play->colChkCtx, &this->colliderBody.base);
     }
     func_800F436C(&this->actor.projectedPos, NA_SE_EN_BALINADE_LEVEL - SFX_FLAG,
@@ -1764,6 +1814,14 @@ void BossVa_SupportAttached(BossVa* this, PlayState* play) {
     BossVa_AttachToBody(this);
     if (Rand_ZeroOne() < 0.1f) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_BALINADE_BL_SPARK - SFX_FLAG);
+    }
+
+    if ((this->colliderSph.base.acFlags & AC_HIT) && BO_HP_ENABLED() && this->hitsTaken == 0) {
+        // Boss Overhaul (Double HP): the tendril has to be hit twice before it is cut
+        this->hitsTaken = 1;
+        this->colliderSph.base.acFlags &= ~AC_HIT;
+        Actor_SetColorFilter(&this->actor, 0x4000, 255, 0, 12);
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_BALINADE_DAMAGE);
     }
 
     if (this->colliderSph.base.acFlags & AC_HIT) {
@@ -2658,8 +2716,9 @@ void BossVa_BariPhase2Attack(BossVa* this, PlayState* play) {
     this->vaBariUnused.y += this->vaBariUnused.z;
     if (sKillBari != 0) {
         sKillBari--;
-        BossVa_KillBari(this, play);
-        return;
+        if (BossVa_DamageBari(this, play)) {
+            return;
+        }
     }
 
     if ((this->colliderLightning.base.atFlags & AT_HIT) || (this->colliderSph.base.atFlags & AT_HIT)) {
@@ -2720,7 +2779,7 @@ void BossVa_BariPhase2Attack(BossVa* this, PlayState* play) {
 
         this->actor.world.pos.y += Math_SinF(this->unk_1A4) * 4.0f;
         if (this->colliderSph.base.acFlags & AC_HIT) {
-            BossVa_KillBari(this, play);
+            BossVa_DamageBari(this, play);
         }
     }
 
@@ -2759,8 +2818,9 @@ void BossVa_BariPhase3Stunned(BossVa* this, PlayState* play) {
 
     this->actor.world.rot.x = Math_Vec3f_Pitch(&GET_BODY(this)->actor.world.pos, &this->actor.world.pos);
     if (this->colliderSph.base.acFlags & AC_HIT) {
-        BossVa_KillBari(this, play);
-        return;
+        if (BossVa_DamageBari(this, play)) {
+            return;
+        }
     }
 
     this->unk_1A4 += Rand_ZeroOne() * 0.5f;

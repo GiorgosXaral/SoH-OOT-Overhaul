@@ -11,6 +11,8 @@
 #include "overlays/actors/ovl_Boss_Ganondrof/z_boss_ganondrof.h"
 #include "overlays/actors/ovl_En_Fhg_Fire/z_en_fhg_fire.h"
 
+#include "boss_overhaul.h"
+
 #define FLAGS ACTOR_FLAG_UPDATE_CULLING_DISABLED
 
 typedef struct {
@@ -617,7 +619,7 @@ void EnfHG_Damage(EnfHG* this, PlayState* play) {
         this->timers[0] = 140;
         this->actionFunc = EnfHG_Retreat;
         Animation_MorphToLoop(&this->skin.skelAnime, &gPhantomHorseRunningAnim, 0.0f);
-        if (bossGnd->actor.colChkInfo.health > 24) {
+        if (bossGnd->actor.colChkInfo.health > BO_HP(24)) {
             this->bossGndSignal = FHG_RIDE;
         } else {
             bossGnd->flyMode = GND_FLY_NEUTRAL;

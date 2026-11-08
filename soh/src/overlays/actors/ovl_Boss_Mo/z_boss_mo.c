@@ -14,6 +14,7 @@
 #include "soh/frame_interpolation.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "boss_overhaul.h"
 
 #include <string.h>
 
@@ -145,6 +146,10 @@ const ActorInit Boss_Mo_InitVars = {
 static BossMo* sMorphaCore = NULL;
 static BossMo* sMorphaTent1 = NULL;
 static BossMo* sMorphaTent2 = NULL;
+
+// Boss Overhaul: Morpha is enraged when its core is at or below half health (and extra attacks are enabled).
+#define MO_ENRAGED() (BO_ATTACKS_ENABLED() && (sMorphaCore != NULL) && \
+                      BO_BELOW_HALF((s8)sMorphaCore->actor.colChkInfo.health, 20))
 
 static f32 sFlatWidth[41] = {
     15.0f, 12.0f, 9.0f, 6.5f, 4.8f, 4.0f, 3.4f, 3.1f, 3.0f, 3.1f, 3.2f, 3.4f, 3.6f, 3.8f,
@@ -365,7 +370,7 @@ void BossMo_Init(Actor* thisx, PlayState* play2) {
         this->actor.world.pos.y = MO_WATER_LEVEL(play) + 50.0f;
         this->fwork[MO_TENT_SWING_SIZE_X] = 5.0f;
         this->drawActor = true;
-        this->actor.colChkInfo.health = 20;
+        this->actor.colChkInfo.health = BO_HP(20);
         this->actor.colChkInfo.mass = 0;
         this->actor.params = 0;
         Actor_SetScale(&this->actor, 0.01f);
@@ -969,7 +974,8 @@ void BossMo_Tentacle(BossMo* this, PlayState* play) {
                     }
                 }
             }
-            if ((this == sMorphaTent1) && (sMorphaCore->hitCount >= 3) && (sMorphaTent2 == NULL)) {
+            if ((this == sMorphaTent1) && (sMorphaCore->hitCount >= (BO_ATTACKS_ENABLED() ? 2 : 3)) &&
+        (sMorphaTent2 == NULL)) {
                 sMorphaTent2 =
                     (BossMo*)Actor_Spawn(&play->actorCtx, play, ACTOR_BOSS_MO, this->actor.world.pos.x,
                                          this->actor.world.pos.y, this->actor.world.pos.z, 0, 0, 0, BOSSMO_TENTACLE);
@@ -2060,9 +2066,34 @@ void BossMo_Core(BossMo* this, PlayState* play) {
             case MO_CORE_MOVE:
                 sp80 = Math_SinS(this->work[MO_TENT_VAR_TIMER] * 0x800) * 100.0f;
                 sp7C = Math_CosS(this->work[MO_TENT_VAR_TIMER] * 0x800) * 100.0f;
-                Math_ApproachF(&this->actor.world.pos.x, sMorphaTent1->targetPos.x + sp80, 0.05f, this->actor.speedXZ);
-                Math_ApproachF(&this->actor.world.pos.z, sMorphaTent1->targetPos.z + sp7C, 0.05f, this->actor.speedXZ);
-                Math_ApproachF(&this->actor.speedXZ, 10.0f, 1.0f, 0.5f);
+                if (BO_ATTACKS_ENABLED()) {
+                    // Boss Overhaul: the core moves faster, and once enraged it periodically lunges straight at Link.
+                    f32 targetX = sMorphaTent1->targetPos.x + sp80;
+                    f32 targetZ = sMorphaTent1->targetPos.z + sp7C;
+                    f32 approachScale = 0.05f;
+                    f32 targetSpeed = MO_ENRAGED() ? 15.0f : 13.0f;
+
+                    if (MO_ENRAGED()) {
+                        if (this->timers[2] == 0) {
+                            this->timers[2] = 140;
+                        }
+                        if ((this->timers[2] > 120) && (player->actor.world.pos.y >= MO_WATER_LEVEL(play))) {
+                            targetX = player->actor.world.pos.x;
+                            targetZ = player->actor.world.pos.z;
+                            approachScale = 0.15f;
+                            targetSpeed = 26.0f;
+                        }
+                    }
+                    Math_ApproachF(&this->actor.world.pos.x, targetX, approachScale, this->actor.speedXZ);
+                    Math_ApproachF(&this->actor.world.pos.z, targetZ, approachScale, this->actor.speedXZ);
+                    Math_ApproachF(&this->actor.speedXZ, targetSpeed, 1.0f, 1.5f);
+                } else {
+                    Math_ApproachF(&this->actor.world.pos.x, sMorphaTent1->targetPos.x + sp80, 0.05f,
+                                   this->actor.speedXZ);
+                    Math_ApproachF(&this->actor.world.pos.z, sMorphaTent1->targetPos.z + sp7C, 0.05f,
+                                   this->actor.speedXZ);
+                    Math_ApproachF(&this->actor.speedXZ, 10.0f, 1.0f, 0.5f);
+                }
                 break;
             case MO_CORE_STUNNED:
                 this->actor.velocity.x = Math_SinS(this->actor.world.rot.y) * this->actor.speedXZ;

@@ -161,6 +161,7 @@ typedef struct BossGanon {
     /* 0x0718 */ s16 organAlpha;
     /* 0x071A */ u8 useOpenHand;
     /* 0x071B */ u8 windowShatterState;
-} BossGanon; // size = 0x71C
+    s16 boPoundCombo; // Boss Overhaul: set while Ganondorf chains a second floor pound
+} BossGanon; // size = 0x71C (vanilla)
 
 #endif

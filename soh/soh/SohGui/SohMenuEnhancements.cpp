@@ -39,6 +39,12 @@ static std::map<int32_t, const char*> bunnyHoodEffectMap = {
     { BUNNY_HOOD_FAST_AND_JUMP, "Faster + Longer Jump" },
 };
 
+static const std::map<int32_t, const char*> eponaControlModes = {
+    { 0, "Tank (vanilla)" },
+    { 1, "Freeform" },
+    { 2, "Hybrid" },
+};
+
 static const std::map<int32_t, const char*> dekuStickCheat = {
     { DEKU_STICK_NORMAL, "Normal" },
     { DEKU_STICK_UNBREAKABLE, "Unbreakable" },
@@ -753,6 +759,13 @@ void SohMenu::AddMenuEnhancements() {
     path.column = SECTION_COLUMN_1;
 
     AddWidget(path, "Equipment", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "Master Sword Beam", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("MasterSwordBeam"))
+        .Options(CheckboxOptions()
+                     .Tooltip("Like A Link to the Past: while your hearts are full, normal Master Sword slashes fire a "
+                              "spinning beam of light that hits like a Master Sword slash. One beam at a time. Jump "
+                              "attacks and spin attacks are unchanged.")
+                     .DefaultValue(true));
     AddWidget(path, "Equip Items on Dpad", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("DpadEquips"))
         .Options(CheckboxOptions().Tooltip(
@@ -1347,6 +1360,17 @@ void SohMenu::AddMenuEnhancements() {
 
     path.column = SECTION_COLUMN_3;
     AddWidget(path, "Enemies", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "Boss Overhaul: Double HP", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("BossOverhaul.DoubleHP"))
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "All main bosses (Gohma through Ganon) have twice as much health.\n\n"
+            "Takes effect the next time a boss fight starts."));
+    AddWidget(path, "Boss Overhaul: Extra Attacks", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("BossOverhaul.ExtraAttacks"))
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "All main bosses (Gohma through Ganon) gain additional attacks, and become more aggressive once "
+            "they are badly hurt.\n\n"
+            "Takes effect the next time a boss fight starts."));
     AddWidget(path, "Hyper Bosses", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("HyperBosses"))
         .Callback([](WidgetInfo& info) { UpdateHyperBossesState(); })
@@ -1363,6 +1387,64 @@ void SohMenu::AddMenuEnhancements() {
                      .DefaultValue(0)
                      .Format("%d seconds")
                      .Tooltip("The time between groups of Leevers spawning."));
+
+    // Epona Control Overhaul
+    path.sidebarName = "Epona";
+    AddSidebarEntry("Enhancements", path.sidebarName, 3);
+    path.column = SECTION_COLUMN_1;
+    auto eponaOverhaulDisabledFunc = [](WidgetInfo& info) {
+        info.options->disabled = !CVarGetInteger(CVAR_ENHANCEMENT("EponaOverhaul.Enabled"), 1);
+        info.options->disabledTooltip = "This option is disabled because \"Epona Control Overhaul\" is turned off.";
+    };
+    AddWidget(path, "Epona Control Overhaul", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "Epona Control Overhaul", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("EponaOverhaul.Enabled"))
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Better controls and handling for Epona. Port of LT_Schmiddy's \"Epona Control Overhaul\" mod for "
+            "Majora's Mask: Recompiled.\n\nTurn this off for exactly the original controls."));
+    AddWidget(path, "Control Mode", WIDGET_CVAR_COMBOBOX)
+        .CVar(CVAR_ENHANCEMENT("EponaOverhaul.ControlMode"))
+        .PreFunc(eponaOverhaulDisabledFunc)
+        .Options(ComboboxOptions()
+                     .ComboMap(eponaControlModes)
+                     .DefaultIndex(1)
+                     .Tooltip("Tank: the original. The stick steers left and right, pulling back brakes.\n\n"
+                              "Freeform: Epona goes in the direction you point the stick, relative to the camera, "
+                              "like Link on foot. Letting go of the stick brakes.\n\n"
+                              "Hybrid: Freeform, but Tank while aiming in first person (the bow)."));
+    AddWidget(path, "Bunny Hood Boost", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("EponaOverhaul.BunnyHood"))
+        .PreFunc(eponaOverhaulDisabledFunc)
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Wearing the Bunny Hood doubles Epona's speed and turn speed."));
+    path.column = SECTION_COLUMN_2;
+    AddWidget(path, "Handling", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "Tank Turn: %.1fx", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("EponaOverhaul.TankTurnMult"))
+        .PreFunc(eponaOverhaulDisabledFunc)
+        .Options(FloatSliderOptions().Min(1.0f).Max(10.0f).Step(0.1f).DefaultValue(2.0f).Format("%.1fx").Tooltip(
+            "How fast Epona turns with Tank controls. 1.0 is the original."));
+    AddWidget(path, "Tank Brake: %.1fx", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("EponaOverhaul.TankBrakeMult"))
+        .PreFunc(eponaOverhaulDisabledFunc)
+        .Options(FloatSliderOptions().Min(1.0f).Max(10.0f).Step(0.1f).DefaultValue(2.0f).Format("%.1fx").Tooltip(
+            "How fast Epona stops with Tank controls. 1.0 is the original."));
+    AddWidget(path, "Freeform Turn: %.1fx", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("EponaOverhaul.FreeformTurnMult"))
+        .PreFunc(eponaOverhaulDisabledFunc)
+        .Options(FloatSliderOptions().Min(1.0f).Max(10.0f).Step(0.1f).DefaultValue(3.0f).Format("%.1fx").Tooltip(
+            "How fast Epona turns with Freeform controls."));
+    AddWidget(path, "Freeform Brake: %.1fx", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("EponaOverhaul.FreeformBrakeMult"))
+        .PreFunc(eponaOverhaulDisabledFunc)
+        .Options(FloatSliderOptions().Min(1.0f).Max(10.0f).Step(0.1f).DefaultValue(4.0f).Format("%.1fx").Tooltip(
+            "How fast Epona stops with Freeform controls."));
+    AddWidget(path, "Freeform Minimum Turn: %d", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("EponaOverhaul.FreeformMinTurn"))
+        .PreFunc(eponaOverhaulDisabledFunc)
+        .Options(IntSliderOptions().Min(10).Max(1500).Step(10).DefaultValue(1000).Tooltip(
+            "Freeform: Epona always turns by at least this much each frame, and snaps onto the stick direction once "
+            "she's closer than this. 182 is one degree."));
 
     // Minigames
     path.sidebarName = "Minigames";

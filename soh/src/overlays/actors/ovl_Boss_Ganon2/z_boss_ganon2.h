@@ -106,6 +106,13 @@ typedef struct BossGanon2 {
     /* 0x0444 */ ColliderJntSph unk_444;
     /* 0x0464 */ ColliderJntSphElement unk_464[16];
     /* 0x0864 */ ColliderJntSphElement unk_864[2];
-} BossGanon2; // size = 0x08E4
+    // Boss Overhaul: extra swing chain marker, ranged attacks, and projectile state
+    s16 boSwingCombo;
+    s16 boRangedCooldown;
+    s16 boRangedKind;
+    s16 boProjKind;
+    s16 boProjLife;
+    ColliderCylinder boProjCollider;
+} BossGanon2; // size = 0x08E4 (+ overhaul fields)
 
 #endif

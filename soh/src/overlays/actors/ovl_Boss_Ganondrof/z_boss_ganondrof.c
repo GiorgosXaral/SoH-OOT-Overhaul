@@ -13,6 +13,7 @@
 #include "overlays/actors/ovl_Door_Warp1/z_door_warp1.h"
 #include "soh/OTRGlobals.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "boss_overhaul.h"
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -220,7 +221,7 @@ void BossGanondrof_Init(Actor* thisx, PlayState* play) {
     SkelAnime_Init(play, &this->skelAnime, &gPhantomGanonSkel, &gPhantomGanonRideAnim, NULL, NULL, 0);
     if (this->actor.params < GND_FAKE_BOSS) {
         this->actor.params = GND_REAL_BOSS;
-        this->actor.colChkInfo.health = 30;
+        this->actor.colChkInfo.health = BO_HP(30);
         this->lightNode = LightContext_InsertLight(play, &play->lightCtx, &this->lightInfo);
         Lights_PointNoGlowSetInfo(&this->lightInfo, this->actor.world.pos.x, this->actor.world.pos.y,
                                   this->actor.world.pos.z, 255, 255, 255, 255);
@@ -442,6 +443,90 @@ void BossGanondrof_SetupNeutral(BossGanondrof* this, f32 arg1) {
     this->timers[0] = (s16)(Rand_ZeroOne() * 64.0f) + 30;
 }
 
+// Boss Overhaul: Phantom Ganon switches to his "final" attack pattern (charges, faster volleys) once he is at half
+// health instead of only when he is nearly defeated.
+static s32 BossGanondrof_UseFinalPattern(BossGanondrof* this) {
+    s32 health = (s8)this->actor.colChkInfo.health;
+
+    if (health < BO_HP(5)) {
+        return true;
+    }
+
+    return BO_ATTACKS_ENABLED() && health <= BO_HP(30) / 2;
+}
+
+// Boss Overhaul: Phantom Ganon calls down a lightning storm once he has lost a third of his health.
+static s32 BossGanondrof_ShouldStartStorm(BossGanondrof* this, f32 rand01) {
+    return BO_ATTACKS_ENABLED() && this->actor.params == GND_REAL_BOSS && this->stormTimer == 0 &&
+           (s8)this->actor.colChkInfo.health <= (BO_HP(30) * 2) / 3 && rand01 < 0.3f;
+}
+
+static void BossGanondrof_StartStorm(BossGanondrof* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    s16 baseAngle = (s16)Rand_CenteredFloat(65535.0f);
+    s16 i;
+
+    this->stormCount = ((s8)this->actor.colChkInfo.health <= BO_HP(10)) ? 3 : 2;
+    this->stormTimer = 44;
+
+    for (i = 0; i < this->stormCount; i++) {
+        f32 radius = (i == 0) ? 0.0f : 130.0f;
+        f32 x = player->actor.world.pos.x + Math_SinS(baseAngle + i * 0x5555) * radius;
+        f32 z = player->actor.world.pos.z + Math_CosS(baseAngle + i * 0x5555) * radius;
+        f32 dx = x - GND_BOSSROOM_CENTER_X;
+        f32 dz = z - GND_BOSSROOM_CENTER_Z;
+        f32 dist = sqrtf(SQ(dx) + SQ(dz));
+
+        if (dist > 250.0f) {
+            x = GND_BOSSROOM_CENTER_X + dx * (250.0f / dist);
+            z = GND_BOSSROOM_CENTER_Z + dz * (250.0f / dist);
+        }
+
+        this->stormPos[i].x = x;
+        this->stormPos[i].y = player->actor.floorHeight;
+        this->stormPos[i].z = z;
+    }
+
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_LAUGH);
+}
+
+static void BossGanondrof_UpdateStorm(BossGanondrof* this, PlayState* play) {
+    s16 i;
+
+    if (this->stormTimer == 0) {
+        return;
+    }
+
+    if (this->actionFunc == BossGanondrof_Death || this->deathState != NOT_DEAD) {
+        this->stormTimer = 0;
+        return;
+    }
+
+    this->stormTimer--;
+
+    for (i = 0; i < this->stormCount; i++) {
+        Vec3f pos = this->stormPos[i];
+        Vec3f vel = { 0.0f, 0.0f, 0.0f };
+        Vec3f accel = { 0.0f, -0.3f, 0.0f };
+
+        if ((this->stormTimer & 1) == 0) {
+            // light gathers where the lightning is about to strike
+            pos.x += Rand_CenteredFloat(50.0f);
+            pos.z += Rand_CenteredFloat(50.0f);
+            vel.x = Rand_CenteredFloat(6.0f);
+            vel.y = Rand_ZeroFloat(6.0f) + 2.0f;
+            vel.z = Rand_CenteredFloat(6.0f);
+            EffectSsFhgFlash_SpawnLightBall(play, &pos, &vel, &accel, (s16)(Rand_ZeroOne() * 60.0f) + 150,
+                                            FHGFLASH_LIGHTBALL_GREEN);
+        }
+
+        if (this->stormTimer == (24 - i * 12)) {
+            Actor_Spawn(&play->actorCtx, play, ACTOR_EN_FHG_FIRE, this->stormPos[i].x, this->stormPos[i].y + 225.0f,
+                        this->stormPos[i].z, 0, 0, 0, FHGFIRE_LIGHTNING_STRIKE);
+        }
+    }
+}
+
 void BossGanondrof_Neutral(BossGanondrof* this, PlayState* play) {
     f32 targetX;
     f32 targetY;
@@ -458,7 +543,9 @@ void BossGanondrof_Neutral(BossGanondrof* this, PlayState* play) {
             if (this->timers[0] == 0) {
                 this->timers[0] = (s16)(Rand_ZeroOne() * 64.0f) + 30;
                 rand01 = Rand_ZeroOne();
-                if (thisx->colChkInfo.health < 5) {
+                if (BossGanondrof_ShouldStartStorm(this, rand01)) {
+                    BossGanondrof_StartStorm(this, play);
+                } else if (BossGanondrof_UseFinalPattern(this)) {
                     if (rand01 < 0.25f) {
                         BossGanondrof_SetupThrow(this, play);
                     } else if (rand01 >= 0.8f) {
@@ -1219,7 +1306,7 @@ void BossGanondrof_CollisionCheck(BossGanondrof* this, PlayState* play) {
                         }
                         dmg = CollisionCheck_GetSwordDamage(dmgFlags, play);
                         (dmg == 0) ? (dmg = 2) : (canKill = true);
-                        if (((s8)this->actor.colChkInfo.health > 2) || canKill) {
+                        if (((s8)this->actor.colChkInfo.health > BO_HP(2)) || canKill) {
                             this->actor.colChkInfo.health -= dmg;
                         }
 
@@ -1275,6 +1362,7 @@ void BossGanondrof_Update(Actor* thisx, PlayState* play) {
     osSyncPrintf("MOVE START EEEEEEEEEEEEEEEEEEEEEE%d\n", this->actor.params);
 
     this->actionFunc(this, play);
+    BossGanondrof_UpdateStorm(this, play);
 
     for (i = 0; i < ARRAY_COUNT(this->timers); i++) {
         if (this->timers[i]) {

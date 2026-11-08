@@ -116,6 +116,10 @@ typedef struct BossGanondrof {
     /* 0x04D0 */ LightInfo lightInfo;
     /* 0x04E0 */ ColliderCylinder colliderBody;
     /* 0x052C */ ColliderCylinder colliderSpear;
+    // Boss Overhaul: lightning storm attack
+    s16 stormTimer;
+    s16 stormCount;
+    Vec3f stormPos[3];
 } BossGanondrof; // size = 0x0578
 
 #endif

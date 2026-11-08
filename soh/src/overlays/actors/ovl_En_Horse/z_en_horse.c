@@ -982,6 +982,118 @@ void EnHorse_Frozen(EnHorse* this, PlayState* play) {
 
 void EnHorse_StickDirection(Vec2f* curStick, f32* stickMag, s16* angle);
 
+/* ---------------------------------------------------------------------------------------------------------------
+ * Epona Control Overhaul
+ *
+ * Port of LT_Schmiddy's "Epona Control Overhaul" mod for Majora's Mask: Recompiled (CC0), adapted to Ocarina of Time.
+ *
+ *  - Tank controls (vanilla): the stick steers left / right relative to Epona and pulling back brakes.
+ *  - Freeform controls: Epona heads wherever the stick points, relative to the camera, the same way Link does on foot.
+ *    Letting go of the stick brakes; she never reverses on her own.
+ *  - Hybrid: freeform, but tank while aiming in first person (the bow on horseback).
+ *  - Turn and brake strength multipliers for each scheme, and an optional Bunny Hood speed boost.
+ *
+ * With the overhaul switched off every function below behaves exactly like vanilla.
+ * --------------------------------------------------------------------------------------------------------------- */
+
+#define ECO_CVAR(name) CVAR_ENHANCEMENT("EponaOverhaul." name)
+
+typedef enum EnHorseEcoControlMode {
+    /* 0 */ ENHORSE_ECO_TANK,
+    /* 1 */ ENHORSE_ECO_FREEFORM,
+    /* 2 */ ENHORSE_ECO_HYBRID
+} EnHorseEcoControlMode;
+
+s32 EnHorse_EcoEnabled(void) {
+    return CVarGetInteger(ECO_CVAR("Enabled"), 1) != 0;
+}
+
+s32 EnHorse_EcoFreeform(PlayState* play) {
+    s32 mode;
+
+    if (!EnHorse_EcoEnabled()) {
+        return false;
+    }
+
+    mode = CVarGetInteger(ECO_CVAR("ControlMode"), ENHORSE_ECO_FREEFORM);
+
+    if (mode == ENHORSE_ECO_HYBRID) {
+        return !(GET_PLAYER(play)->stateFlags1 & PLAYER_STATE1_FIRST_PERSON);
+    }
+
+    return mode == ENHORSE_ECO_FREEFORM;
+}
+
+/**
+ * Reads the stick like EnHorse_StickDirection. In freeform mode the returned angle is the turn Epona still has to make to
+ * face where the stick points (camera relative), so every "stick pointed left / right / behind" check in the mounted
+ * actions keeps working unchanged. desiredYaw (optional) receives that world direction.
+ */
+void EnHorse_EcoStickDirection(EnHorse* this, PlayState* play, f32* stickMag, s16* angle, s16* desiredYaw) {
+    s16 worldYaw;
+
+    EnHorse_StickDirection(&this->curStick, stickMag, angle);
+    worldYaw = Camera_GetInputDirYaw(GET_ACTIVE_CAM(play)) + *angle;
+
+    if (desiredYaw != NULL) {
+        *desiredYaw = worldYaw;
+    }
+
+    if (EnHorse_EcoFreeform(play)) {
+        *angle = worldYaw - this->actor.world.rot.y;
+    }
+}
+
+// Turn / brake multipliers and the Bunny Hood boost. Called at the top of EnHorse_UpdateSpeed.
+void EnHorse_EcoAdjustSpeedParams(PlayState* play, f32* brakeDecel, f32* baseSpeed, s16* turnSpeed) {
+    s32 freeform;
+    f32 turnMult;
+    f32 brakeMult;
+
+    if (!EnHorse_EcoEnabled()) {
+        return;
+    }
+
+    freeform = EnHorse_EcoFreeform(play);
+    turnMult = freeform ? CVarGetFloat(ECO_CVAR("FreeformTurnMult"), 3.0f) : CVarGetFloat(ECO_CVAR("TankTurnMult"), 2.0f);
+    brakeMult =
+        freeform ? CVarGetFloat(ECO_CVAR("FreeformBrakeMult"), 4.0f) : CVarGetFloat(ECO_CVAR("TankBrakeMult"), 2.0f);
+
+    *turnSpeed = (s16)CLAMP(*turnSpeed * turnMult, 0, 0x7FFF);
+    *brakeDecel *= brakeMult;
+
+    if (CVarGetInteger(ECO_CVAR("BunnyHood"), 1) && (GET_PLAYER(play)->currentMask == PLAYER_MASK_BUNNY)) {
+        *baseSpeed *= 2.0f;
+        *turnSpeed = (s16)CLAMP(*turnSpeed * 2, 0, 0x7FFF);
+    }
+}
+
+/**
+ * Freeform turning: turn by the computed amount, but by at least the minimum turn speed, never past the target, and snap
+ * onto the target once within the minimum.
+ */
+void EnHorse_EcoApplyFreeformTurn(EnHorse* this, s16 turn, s16 desiredYaw) {
+    s32 minTurn = CVarGetInteger(ECO_CVAR("FreeformMinTurn"), 1000);
+    s16 remaining = desiredYaw - this->actor.world.rot.y;
+
+    if (ABS(remaining) < minTurn) {
+        this->actor.world.rot.y = desiredYaw;
+    } else {
+        s32 step = ABS(turn);
+
+        if (step < minTurn) {
+            step = minTurn;
+        }
+        if (step > ABS(remaining)) {
+            step = ABS(remaining);
+        }
+
+        this->actor.world.rot.y += (remaining > 0) ? step : -step;
+    }
+
+    this->actor.shape.rot.y = this->actor.world.rot.y;
+}
+
 void EnHorse_UpdateSpeed(EnHorse* this, PlayState* play, f32 brakeDecel, f32 brakeAngle, f32 minStickMag, f32 decel,
                          f32 baseSpeed, s16 turnSpeed) {
     s16* stickAnglePtr; // probably fake
@@ -990,6 +1102,10 @@ void EnHorse_UpdateSpeed(EnHorse* this, PlayState* play, f32 brakeDecel, f32 bra
     f32 temp_f12;
     f32 traction;
     s16 turn;
+    s16 desiredYaw;
+    s32 freeform = EnHorse_EcoFreeform(play);
+
+    EnHorse_EcoAdjustSpeedParams(play, &brakeDecel, &baseSpeed, &turnSpeed);
 
     if (!EnHorse_PlayerCanMove(this, play)) {
         if (this->actor.speedXZ > 8) {
@@ -1004,8 +1120,9 @@ void EnHorse_UpdateSpeed(EnHorse* this, PlayState* play, f32 brakeDecel, f32 bra
     stickAnglePtr = &stickAngle;
 
     baseSpeed *= EnHorse_SlopeSpeedMultiplier(this, play);
-    EnHorse_StickDirection(&this->curStick, &stickMag, &stickAngle);
-    if (Math_CosS(stickAngle) <= brakeAngle) {
+    EnHorse_EcoStickDirection(this, play, &stickMag, &stickAngle, &desiredYaw);
+    // Freeform: releasing the stick brakes (pulling it back now turns Epona around instead)
+    if (freeform ? (stickMag < 0.01f) : (Math_CosS(stickAngle) <= brakeAngle)) {
         this->actor.speedXZ -= brakeDecel;
         this->actor.speedXZ = this->actor.speedXZ < 0.0f ? 0.0f : this->actor.speedXZ;
         return;
@@ -1059,6 +1176,12 @@ void EnHorse_UpdateSpeed(EnHorse* this, PlayState* play, f32 brakeDecel, f32 bra
     traction = 2.2f - (this->actor.speedXZ * (1.0f / this->boostSpeed));
     turn = *stickAnglePtr * temp_f12 * temp_f12 * traction;
     turn = CLAMP(turn, -turnSpeed * traction, turnSpeed * traction);
+
+    if (freeform) {
+        EnHorse_EcoApplyFreeformTurn(this, turn, desiredYaw);
+        return;
+    }
+
     this->actor.world.rot.y += turn;
     this->actor.shape.rot.y = this->actor.world.rot.y;
 }
@@ -1100,9 +1223,12 @@ void EnHorse_MountedIdle(EnHorse* this, PlayState* play) {
     s16 angle = 0;
 
     this->actor.speedXZ = 0;
-    EnHorse_StickDirection(&this->curStick, &mag, &angle);
+    EnHorse_EcoStickDirection(this, play, &mag, &angle, NULL);
     if (mag > 10.0f && EnHorse_PlayerCanMove(this, play) == true) {
-        if (Math_CosS(angle) <= -0.5f) {
+        if (EnHorse_EcoFreeform(play)) {
+            // Freeform: just start walking, EnHorse_UpdateSpeed turns her towards the stick
+            EnHorse_StartWalkingFromIdle(this);
+        } else if (Math_CosS(angle) <= -0.5f) {
             EnHorse_StartReversingInterruptable(this);
         } else if (Math_CosS(angle) <= 0.7071) { // cos(45 degrees)
             EnHorse_StartTurning(this);
@@ -1140,9 +1266,11 @@ void EnHorse_MountedIdleWhinneying(EnHorse* this, PlayState* play) {
     s16 stickAngle = 0;
 
     this->actor.speedXZ = 0;
-    EnHorse_StickDirection(&this->curStick, &stickMag, &stickAngle);
+    EnHorse_EcoStickDirection(this, play, &stickMag, &stickAngle, NULL);
     if (stickMag > 10.0f && EnHorse_PlayerCanMove(this, play) == true) {
-        if (Math_CosS(stickAngle) <= -0.5f) {
+        if (EnHorse_EcoFreeform(play)) {
+            EnHorse_StartWalkingFromIdle(this);
+        } else if (Math_CosS(stickAngle) <= -0.5f) {
             EnHorse_StartReversingInterruptable(this);
         } else if (Math_CosS(stickAngle) <= 0.7071) { // cos(45 degrees)
             EnHorse_StartTurning(this);
@@ -1170,11 +1298,11 @@ void EnHorse_MountedTurn(EnHorse* this, PlayState* play) {
 
     this->actor.speedXZ = 0;
     EnHorse_PlayWalkingSound(this);
-    EnHorse_StickDirection(&this->curStick, &stickMag, &stickAngle);
+    EnHorse_EcoStickDirection(this, play, &stickMag, &stickAngle, NULL);
     if (stickMag > 10.0f) {
         if (!EnHorse_PlayerCanMove(this, play)) {
             EnHorse_StartMountedIdleResetAnim(this);
-        } else if (Math_CosS(stickAngle) <= -0.5f) {
+        } else if (!EnHorse_EcoFreeform(play) && (Math_CosS(stickAngle) <= -0.5f)) {
             EnHorse_StartReversingInterruptable(this);
         } else if (Math_CosS(stickAngle) <= 0.7071) { // cos(45 degrees)
             clampedYaw = CLAMP(stickAngle, -800.0f, 800.0f);
@@ -1235,7 +1363,7 @@ void EnHorse_MountedWalk(EnHorse* this, PlayState* play) {
     s16 stickAngle;
 
     EnHorse_PlayWalkingSound(this);
-    EnHorse_StickDirection(&this->curStick, &stickMag, &stickAngle);
+    EnHorse_EcoStickDirection(this, play, &stickMag, &stickAngle, NULL);
     if (this->noInputTimerMax == 0.0f ||
         (this->noInputTimer > 0.0f && this->noInputTimer < this->noInputTimerMax - 20.0f)) {
         EnHorse_UpdateSpeed(this, play, 0.3f, -0.5f, 10.0f, 0.06f, 3.0f, 400);
@@ -1271,7 +1399,8 @@ void EnHorse_MountedWalk(EnHorse* this, PlayState* play) {
                     EnHorse_StartTrotting(this);
                     this->noInputTimer = 0;
                     this->noInputTimerMax = 0;
-                } else if ((stickMag < 10.0f) || (Math_CosS(stickAngle) <= -0.5f)) {
+                } else if ((stickMag < 10.0f) ||
+                           (!EnHorse_EcoFreeform(play) && (Math_CosS(stickAngle) <= -0.5f))) {
                     EnHorse_StartMountedIdleResetAnim(this);
                     this->noInputTimer = 0;
                     this->noInputTimerMax = 0;
@@ -1306,7 +1435,7 @@ void EnHorse_MountedTrot(EnHorse* this, PlayState* play) {
     s16 stickAngle;
 
     EnHorse_UpdateSpeed(this, play, 0.3f, -0.5f, 10.0f, 0.06f, 6.0f, 400);
-    EnHorse_StickDirection(&this->curStick, &stickMag, &stickAngle);
+    EnHorse_EcoStickDirection(this, play, &stickMag, &stickAngle, NULL);
     if (this->actor.speedXZ < 3.0f) {
         EnHorse_StartWalkingInterruptable(this);
     }
@@ -1367,7 +1496,7 @@ void EnHorse_MountedGallop(EnHorse* this, PlayState* play) {
     f32 stickMag;
     s16 stickAngle;
 
-    EnHorse_StickDirection(&this->curStick, &stickMag, &stickAngle);
+    EnHorse_EcoStickDirection(this, play, &stickMag, &stickAngle, NULL);
 
     if (this->noInputTimer <= 0.0f) {
         EnHorse_UpdateSpeed(this, play, 0.3f, -0.5f, 10.0f, 0.06f, 8.0f, 0x190);
@@ -1384,7 +1513,8 @@ void EnHorse_MountedGallop(EnHorse* this, PlayState* play) {
         EnHorse_PlayGallopingSound(this);
         func_800AA000(0, 120, 8, 255);
         if (EnHorse_PlayerCanMove(this, play) == true) {
-            if (stickMag >= 10.0f && Math_CosS(stickAngle) <= -0.5f) {
+            if (EnHorse_EcoFreeform(play) ? (stickMag < 0.01f)
+                                           : ((stickMag >= 10.0f) && (Math_CosS(stickAngle) <= -0.5f))) {
                 EnHorse_StartBraking(this, play);
             } else if (this->actor.speedXZ < 6.0f) {
                 EnHorse_StartTrotting(this);
@@ -1425,20 +1555,25 @@ void EnHorse_MountedRearing(EnHorse* this, PlayState* play) {
         }
     }
 
-    EnHorse_StickDirection(&this->curStick, &stickMag, &stickAngle);
+    EnHorse_EcoStickDirection(this, play, &stickMag, &stickAngle, NULL);
     if (SkelAnime_Update(&this->skin.skelAnime)) {
         if (EnHorse_PlayerCanMove(this, play) == true) {
             if (this->stateFlags & ENHORSE_FORCE_REVERSING) {
                 this->noInputTimer = 100;
                 this->noInputTimerMax = 100;
                 this->stateFlags &= ~ENHORSE_FORCE_REVERSING;
-                EnHorse_StartReversing(this);
+                if (EnHorse_EcoFreeform(play)) {
+                    // Freeform: stand still instead of backing away, the stick turns her around
+                    EnHorse_StartMountedIdleResetAnim(this);
+                } else {
+                    EnHorse_StartReversing(this);
+                }
             } else if (this->stateFlags & ENHORSE_FORCE_WALKING) {
                 this->noInputTimer = 100;
                 this->noInputTimerMax = 100;
                 this->stateFlags &= ~ENHORSE_FORCE_WALKING;
                 EnHorse_StartWalking(this);
-            } else if (Math_CosS(stickAngle) <= -0.5f) {
+            } else if (!EnHorse_EcoFreeform(play) && (Math_CosS(stickAngle) <= -0.5f)) {
                 EnHorse_StartReversingInterruptable(this);
             } else {
                 EnHorse_StartMountedIdleResetAnim(this);
@@ -1524,7 +1659,7 @@ void EnHorse_Reverse(EnHorse* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
 
     EnHorse_PlayWalkingSound(this);
-    EnHorse_StickDirection(&this->curStick, &stickMag, &stickAngle);
+    EnHorse_EcoStickDirection(this, play, &stickMag, &stickAngle, NULL);
     if (EnHorse_PlayerCanMove(this, play) == true) {
         if (this->noInputTimerMax == 0.0f ||
             (this->noInputTimer > 0.0f && this->noInputTimer < this->noInputTimerMax - 20.0f)) {
@@ -1567,7 +1702,7 @@ void EnHorse_Reverse(EnHorse* this, PlayState* play) {
     this->skin.skelAnime.playSpeed = this->actor.speedXZ * 0.5f * 1.5f;
     if (SkelAnime_Update(&this->skin.skelAnime) && (f32)this->noInputTimer <= 0.0f &&
         EnHorse_PlayerCanMove(this, play) == true) {
-        if (stickMag > 10.0f && Math_CosS(stickAngle) <= -0.5f) {
+        if (!EnHorse_EcoFreeform(play) && (stickMag > 10.0f) && (Math_CosS(stickAngle) <= -0.5f)) {
             this->noInputTimerMax = 0;
             EnHorse_StartReversingInterruptable(this);
         } else if (stickMag < 10.0f) {

@@ -16,6 +16,7 @@
 #include "overlays/actors/ovl_En_Elf/z_en_elf.h"
 #include "overlays/actors/ovl_En_Fish/z_en_fish.h"
 #include "overlays/actors/ovl_En_Horse/z_en_horse.h"
+#include "overlays/actors/ovl_En_M_Thunder/z_en_m_thunder.h"
 #include "overlays/effects/ovl_Effect_Ss_Fhg_Flash/z_eff_ss_fhg_flash.h"
 #include "overlays/misc/ovl_kaleido_scope/z_kaleido_scope.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
@@ -2375,6 +2376,11 @@ void func_80833A20(Player* this, s32 newMeleeWeaponState) {
 
         if (this->heldItemAction >= PLAYER_IA_SWORD_MASTER && this->heldItemAction <= PLAYER_IA_SWORD_BIGGORON) {
             gSaveContext.ship.stats.count[COUNT_SWORD_SWINGS]++;
+        }
+
+        // Master Sword beam: fires as the swing starts (checks full health, the sword and the kind of swing itself)
+        if (newMeleeWeaponState != 0) {
+            EnMThunder_TrySwordBeam(gPlayState, this);
         }
     }
 

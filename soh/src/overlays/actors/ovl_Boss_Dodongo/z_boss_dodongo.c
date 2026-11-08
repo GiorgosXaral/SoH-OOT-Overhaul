@@ -11,6 +11,9 @@
 #include <stdlib.h> // malloc
 #include <string.h> // memcpy
 
+#include "boss_overhaul.h"
+#include "overlays/actors/ovl_En_Bdfire/z_en_bdfire.h"
+
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
      ACTOR_FLAG_DRAW_CULLING_DISABLED)
@@ -329,7 +332,7 @@ void BossDodongo_Init(Actor* thisx, PlayState* play) {
     Animation_PlayLoop(&this->skelAnime, &object_kingdodongo_Anim_00F0D8);
     this->unk_1F8 = 1.0f;
     BossDodongo_SetupIntroCutscene(this, play);
-    this->health = 12;
+    this->health = BO_HP(12);
     this->colorFilterMin = 995.0f;
     this->actor.colChkInfo.mass = MASS_IMMOVABLE;
     this->colorFilterMax = 1000.0f;
@@ -630,6 +633,43 @@ void BossDodongo_IntroCutscene(BossDodongo* this, PlayState* play) {
     }
 }
 
+// Boss Overhaul: King Dodongo is enraged once he is down to half of his (possibly doubled) health.
+static s32 BossDodongo_IsEnraged(BossDodongo* this) {
+    return BO_ATTACKS_ENABLED() && this->health <= BO_HP(12) / 2;
+}
+
+// Boss Overhaul: fire breath fired at an angle relative to Dodongo's facing direction.
+static void BossDodongo_SpawnFireAngled(BossDodongo* this, PlayState* play, s16 params, s16 yawOffset) {
+    Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_BDFIRE, this->vec.x, this->vec.y - 20.0f,
+                       this->vec.z, 0, this->actor.shape.rot.y + yawOffset, 0, params);
+}
+
+// Boss Overhaul: a stationary patch of flames left behind while Dodongo rolls.
+static void BossDodongo_SpawnFirePatch(BossDodongo* this, PlayState* play, s16 lifetime) {
+    Actor* fire = Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_BDFIRE, this->actor.world.pos.x,
+                                     this->actor.world.pos.y + 10.0f, this->actor.world.pos.z, 0,
+                                     this->actor.shape.rot.y, 0, 4);
+
+    if (fire != NULL) {
+        fire->speedXZ = 0.0f;
+        ((EnBdfire*)fire)->unk_154 = lifetime;
+    }
+}
+
+// Boss Overhaul: ring of flames that shoots outwards from Dodongo's body.
+static void BossDodongo_FireNova(BossDodongo* this, PlayState* play) {
+    s16 i;
+    s16 count = 8;
+
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_DODO_K_CRY);
+    func_80033E88(&this->actor, play, 4, 10);
+
+    for (i = 0; i < count; i++) {
+        Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_BDFIRE, this->actor.world.pos.x,
+                           this->actor.world.pos.y + 20.0f, this->actor.world.pos.z, 0, i * (0x10000 / count), 0, 6);
+    }
+}
+
 void BossDodongo_SetupDamaged(BossDodongo* this) {
     if (this->actionFunc != BossDodongo_Damaged) {
         Animation_Change(&this->skelAnime, &object_kingdodongo_Anim_001074, 1.0f, 0.0f,
@@ -694,6 +734,9 @@ void BossDodongo_Damaged(BossDodongo* this, PlayState* play) {
     Math_SmoothStepToF(&this->unk_208, 0.05f, 1.0f, 0.005f, 0.0f);
 
     if (Animation_OnFrame(&this->skelAnime, Animation_GetLastFrame(&object_kingdodongo_Anim_001074))) {
+        if (BossDodongo_IsEnraged(this)) {
+            BossDodongo_FireNova(this, play);
+        }
         BossDodongo_SetupRoll(this);
     }
 }
@@ -794,6 +837,11 @@ void BossDodongo_BlowFire(BossDodongo* this, PlayState* play) {
 
     if ((this->skelAnime.curFrame > 17.0f) && (this->skelAnime.curFrame < 35.0f)) {
         BossDodongo_SpawnFire(this, play, this->unk_1AE);
+        if (BO_ATTACKS_ENABLED() && (this->unk_1AE % 3) == 0) {
+            // Boss Overhaul: the fire breath fans out to both sides
+            BossDodongo_SpawnFireAngled(this, play, this->unk_1AE, 0x2400);
+            BossDodongo_SpawnFireAngled(this, play, this->unk_1AE, -0x2400);
+        }
         this->unk_1AE++;
         Math_SmoothStepToF(&this->unk_244, 0.0f, 1.0f, 8.0f, 0.0f);
     }
@@ -925,7 +973,7 @@ void BossDodongo_Roll(BossDodongo* this, PlayState* play) {
     }
 
     sp5C = &sCornerPositions[this->unk_1A0];
-    this->unk_1EC = 3.0f;
+    this->unk_1EC = BossDodongo_IsEnraged(this) ? 3.8f : 3.0f;
 
     if (this->unk_1DA == 0) {
         Math_SmoothStepToF(&this->unk_1E4, this->unk_1EC * 5.0f, 1.0f, this->unk_1EC * 0.25f, 0.0f);
@@ -943,6 +991,15 @@ void BossDodongo_Roll(BossDodongo* this, PlayState* play) {
 
             if (!(this->unk_19E & 1)) {
                 Actor_SpawnFloorDustRing(play, &this->actor, &this->actor.world.pos, 40.0f, 3, 8.0f, 500, 10, false);
+            }
+
+            if (BO_ATTACKS_ENABLED()) {
+                // Boss Overhaul: Dodongo leaves burning patches on the floor while rolling
+                s32 enraged = BossDodongo_IsEnraged(this);
+
+                if ((this->unk_19E % (enraged ? 6 : 12)) == 0) {
+                    BossDodongo_SpawnFirePatch(this, play, enraged ? 70 : 45);
+                }
             }
         }
     }

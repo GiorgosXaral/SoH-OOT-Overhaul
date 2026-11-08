@@ -45,6 +45,8 @@ typedef struct BossVa {
     /* 0x02D8 */ ColliderJntSph colliderSph;
     /* 0x02F8 */ ColliderJntSphElement elements[1];
     /* 0x0338 */ ColliderQuad colliderLightning;
+    u8 hitsTaken; // Boss Overhaul: hits absorbed by a tendril/Bari before it is cut/killed
+    u32 hitFrame; // Boss Overhaul: gameplay frame of the last absorbed hit
 } BossVa; // size = 0x03B8
 
 typedef enum {

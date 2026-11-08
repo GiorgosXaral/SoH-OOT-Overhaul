@@ -147,7 +147,7 @@ void EnGoma_Init(Actor* thisx, PlayState* play) {
         Animation_PlayLoop(&this->skelanime, &gObjectGolStandAnim);
         this->actor.colChkInfo.health = 2;
 
-        if (this->actor.params < 3) { // Spawned by boss
+        if (this->actor.params < 6) { // Spawned by boss (params 3-5 are the extra children of Boss Overhaul)
             this->actionFunc = EnGoma_EggFallToGround;
             this->invincibilityTimer = 10;
             this->actor.speedXZ = 1.5f;

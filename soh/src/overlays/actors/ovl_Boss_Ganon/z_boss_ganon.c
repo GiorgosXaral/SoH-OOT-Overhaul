@@ -13,6 +13,7 @@
 #include "soh/frame_interpolation.h"
 #include "soh/OTRGlobals.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "boss_overhaul.h"
 
 #include <string.h>
 
@@ -353,7 +354,7 @@ void BossGanon_Init(Actor* thisx, PlayState* play2) {
         }
 
         sBossGanonGanondorf = this;
-        thisx->colChkInfo.health = 40;
+        thisx->colChkInfo.health = BO_HP(40);
         Actor_ProcessInitChain(thisx, sInitChain);
         ActorShape_Init(&thisx->shape, 0, NULL, 0);
         Actor_SetScale(thisx, 0.01f);
@@ -2013,7 +2014,15 @@ void BossGanon_PoundFloor(BossGanon* this, PlayState* play) {
             Math_ApproachF(&this->actor.velocity.y, 20.0f, 1.0f, 1.0f);
 
             if (Animation_OnFrame(&this->skelAnime, this->fwork[GDF_FWORK_1])) {
-                BossGanon_SetupWait(this, play);
+                if (BO_ATTACKS_ENABLED() && BO_BELOW_HALF((s8)this->actor.colChkInfo.health, 40) &&
+                    (this->boPoundCombo == 0)) {
+                    // Boss Overhaul: an enraged Ganondorf pounds the floor twice in a row
+                    this->boPoundCombo = 1;
+                    BossGanon_SetupPoundFloor(this, play);
+                } else {
+                    BossGanon_SetupWait(this, play);
+                    this->boPoundCombo = 0;
+                }
             }
             break;
     }
@@ -2219,6 +2228,14 @@ void BossGanon_ChargeBigMagic(BossGanon* this, PlayState* play) {
                                        this->unk_1FC.y, this->unk_1FC.z, 0, this->actor.yawTowardsPlayer, 0, 0x104 + i);
                 }
 
+                if (BO_ATTACKS_ENABLED()) {
+                    // Boss Overhaul: two more balls widen the fan (params 0x109 / 0x10B aim +/- 0x6000 to the sides)
+                    Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_BOSS_GANON, this->unk_1FC.x,
+                                       this->unk_1FC.y, this->unk_1FC.z, 0, this->actor.yawTowardsPlayer, 0, 0x109);
+                    Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_BOSS_GANON, this->unk_1FC.x,
+                                       this->unk_1FC.y, this->unk_1FC.z, 0, this->actor.yawTowardsPlayer, 0, 0x10B);
+                }
+
                 Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_BIGMASIC);
                 Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_THROW_BIG);
             }
@@ -2277,8 +2294,13 @@ void BossGanon_Wait(BossGanon* this, PlayState* play) {
         } else if ((this->timers[0] == 0) && !(player->stateFlags1 & PLAYER_STATE1_HANGING_OFF_LEDGE)) {
             this->timers[0] = (s16)Rand_ZeroFloat(30.0f) + 30;
 
-            if ((s8)this->actor.colChkInfo.health >= 20) {
-                BossGanon_SetupChargeLightBall(this, play);
+            if ((s8)this->actor.colChkInfo.health >= BO_HP(20)) {
+                if (BO_ATTACKS_ENABLED() && (Rand_ZeroOne() < 0.3f)) {
+                    // Boss Overhaul: Ganondorf also pounds the floor in the first half of the fight
+                    BossGanon_SetupPoundFloor(this, play);
+                } else {
+                    BossGanon_SetupChargeLightBall(this, play);
+                }
             } else if (Rand_ZeroOne() >= 0.5f) {
                 if ((Rand_ZeroOne() >= 0.5f) || (this->actor.xzDistToPlayer > 350.0f)) {
                     BossGanon_SetupChargeBigMagic(this, play);
@@ -2789,7 +2811,7 @@ void BossGanon_UpdateDamage(BossGanon* this, PlayState* play) {
                     hitWithSword = true;
                 }
 
-                if (((s8)this->actor.colChkInfo.health >= 3) || hitWithSword) {
+                if (((s8)this->actor.colChkInfo.health >= BO_HP(3)) || hitWithSword) {
                     this->actor.colChkInfo.health -= damage;
                 }
 
@@ -4034,7 +4056,7 @@ void BossGanon_LightBall_Update(Actor* thisx, PlayState* play2) {
                             // if ganondorf is 250 units away from link, at least 3 volleys are required
                             if ((ganondorf->actor.xyzDistToPlayerSq > 62500.0f) && (this->unk_1A4 < 3)) {
                                 this->unk_1C2 = 1;
-                            } else if (Rand_ZeroOne() < 0.7f) {
+                            } else if (Rand_ZeroOne() < (BO_ATTACKS_ENABLED() ? 0.75f : 0.7f)) {
                                 this->unk_1C2 = 1;
                             } else {
                                 this->unk_1C2 = 3;
@@ -4093,6 +4115,10 @@ void BossGanon_LightBall_Update(Actor* thisx, PlayState* play2) {
                     this->timers[1] = 2;
                     Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_REFLECT_MG);
                     Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_AT_RETURN);
+                    if (BO_ATTACKS_ENABLED() && (this->actor.speedXZ < 17.0f)) {
+                        // Boss Overhaul: the ball gets faster with every volley
+                        this->actor.speedXZ += 1.5f;
+                    }
                     this->unk_1C2 = 0;
                     break;
                 }

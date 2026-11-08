@@ -7,6 +7,7 @@
 #include "soh/OTRGlobals.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "boss_overhaul.h"
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -28,6 +29,16 @@ typedef enum {
     VISUALSTATE_STUNNED = 4, // main: greenish cyan, alternates with blue; eye: greenish cyan
     VISUALSTATE_HIT          // main: greenish cyan, alternates with red; eye: greenish cyan
 } GohmaVisualState;
+
+// Boss Overhaul: number of baby gohmas that hang from Gohma's tail during the ceiling phase.
+static s16 BossGoma_GetChildCount(void) {
+    return BO_ATTACKS_ENABLED() ? 5 : 3;
+}
+
+// Boss Overhaul: Gohma is enraged once it is down to half of its (possibly doubled) health.
+static s32 BossGoma_IsEnraged(BossGoma* this) {
+    return BO_ATTACKS_ENABLED() && (s8)this->actor.colChkInfo.health <= BO_HP(10) / 2;
+}
 
 void BossGoma_Init(Actor* thisx, PlayState* play);
 void BossGoma_Destroy(Actor* thisx, PlayState* play);
@@ -336,7 +347,7 @@ void BossGoma_Init(Actor* thisx, PlayState* play) {
     this->actor.world.pos.y = -300.0f; // ceiling
     this->actor.gravity = 0.0f;
     BossGoma_SetupEncounter(this, play);
-    this->actor.colChkInfo.health = 10;
+    this->actor.colChkInfo.health = BO_HP(10);
     this->actor.colChkInfo.mass = MASS_IMMOVABLE;
     Collider_InitJntSph(play, &this->collider);
     Collider_SetJntSph(play, &this->collider, &this->actor, &sColliderJntSphInit, this->colliderItems);
@@ -454,7 +465,9 @@ void BossGoma_SetupFallJump(BossGoma* this) {
     // When in Enemy Randomizer, reset the state of the spawned Gohma Larva because it's not done
     // by the (non-existent) Larva themselves.
     if (CVarGetInteger(CVAR_ENHANCEMENT("RandomizedEnemies"), 0)) {
-        this->childrenGohmaState[0] = this->childrenGohmaState[1] = this->childrenGohmaState[2] = 0;
+        for (s16 j = 0; j < ARRAY_COUNT(this->childrenGohmaState); j++) {
+            this->childrenGohmaState[j] = 0;
+        }
     }
     Animation_Change(&this->skelanime, &gGohmaLandAnim, 1.0f, 0.0f, 0.0f, ANIMMODE_ONCE, -5.0f);
     this->actionFunc = BossGoma_FallJump;
@@ -1318,6 +1331,17 @@ void BossGoma_FloorAttack(BossGoma* this, PlayState* play) {
                 }
             }
 
+            if (BO_ATTACKS_ENABLED()) {
+                // Boss Overhaul: Gohma lunges at the player before slamming down
+                if (this->skelanime.curFrame < 10.0f) {
+                    Math_ApproachF(&this->actor.speedXZ, BossGoma_IsEnraged(this) ? 16.0f : 12.0f, 0.5f, 4.0f);
+                    Math_ApproachS(&this->actor.world.rot.y, Actor_WorldYawTowardActor(&this->actor, &GET_PLAYER(play)->actor),
+                                   2, 0x800);
+                } else {
+                    Math_ApproachZeroF(&this->actor.speedXZ, 0.5f, 3.0f);
+                }
+            }
+
             if (Animation_OnFrame(&this->skelanime, 10.0f)) {
                 BossGoma_PlayEffectsAndSfx(this, play, 3, 5);
                 func_80033E88(&this->actor, play, 5, 15);
@@ -1502,14 +1526,23 @@ void BossGoma_CeilingSpawnGohmas(BossGoma* this, PlayState* play) {
     }
 
     if (this->tailLimbsScaleTimers[0] == 2) {
-        for (i = 0; i < ARRAY_COUNT(this->childrenGohmaState); i++) {
+        s16 childCount = BossGoma_GetChildCount();
+        s16 unspawnedLeft = false;
+
+        for (i = 0; i < childCount; i++) {
             if (this->childrenGohmaState[i] == 0) {
                 BossGoma_SpawnChildGohma(this, play, i);
                 break;
             }
         }
 
-        if (this->childrenGohmaState[0] == 0 || this->childrenGohmaState[1] == 0 || this->childrenGohmaState[2] == 0) {
+        for (i = 0; i < childCount; i++) {
+            if (this->childrenGohmaState[i] == 0) {
+                unspawnedLeft = true;
+            }
+        }
+
+        if (unspawnedLeft) {
             this->spawnGohmasActionTimer = 23;
         }
     }
@@ -1565,17 +1598,28 @@ void BossGoma_CeilingIdle(BossGoma* this, PlayState* play) {
         if (CVarGetInteger(CVAR_ENHANCEMENT("RandomizedEnemies"), 0)) {
             nearbyEnTest = Actor_FindNearby(play, &this->actor, -1, ACTORCAT_ENEMY, 8000.0f);
         }
-        if (this->childrenGohmaState[0] == 0 && this->childrenGohmaState[1] == 0 && this->childrenGohmaState[2] == 0) {
+        s16 childCount = BossGoma_GetChildCount();
+        s16 noneSpawned = true;
+        s16 allDead = true;
+
+        for (i = 0; i < childCount; i++) {
+            if (this->childrenGohmaState[i] != 0) {
+                noneSpawned = false;
+            }
+            if (this->childrenGohmaState[i] >= 0) {
+                allDead = false;
+            }
+        }
+
+        if (noneSpawned) {
             // if no child gohma has been spawned
             BossGoma_SetupCeilingPrepareSpawnGohmas(this);
-        } else if ((this->childrenGohmaState[0] < 0 && this->childrenGohmaState[1] < 0 &&
-                    this->childrenGohmaState[2] < 0) ||
-                   (nearbyEnTest == NULL && CVarGetInteger(CVAR_ENHANCEMENT("RandomizedEnemies"), 0))) {
+        } else if (allDead || (nearbyEnTest == NULL && CVarGetInteger(CVAR_ENHANCEMENT("RandomizedEnemies"), 0))) {
             // In authentic gameplay, check if all baby Ghomas are dead. In Enemy Randomizer, check if there's no
             // enemies alive.
             BossGoma_SetupFallJump(this);
         } else {
-            for (i = 0; i < ARRAY_COUNT(this->childrenGohmaState); i++) {
+            for (i = 0; i < childCount; i++) {
                 if (this->childrenGohmaState[i] == 0) {
                     // if any child gohma hasn't been spawned
                     // this seems unreachable since BossGoma_CeilingSpawnGohmas spawns all three and can't be
@@ -1626,11 +1670,11 @@ void BossGoma_FloorMain(BossGoma* this, PlayState* play) {
         if (this->patienceTimer != 0) {
             this->patienceTimer--;
 
-            if (this->actor.xzDistToPlayer < 150.0f) {
+            if (this->actor.xzDistToPlayer < (BO_ATTACKS_ENABLED() ? 210.0f : 150.0f)) {
                 BossGoma_SetupFloorAttackPosture(this);
             }
 
-            Math_ApproachF(&this->actor.speedXZ, 10.0f / 3.0f, 0.5f, 2.0f);
+            Math_ApproachF(&this->actor.speedXZ, BossGoma_IsEnraged(this) ? 5.0f : 10.0f / 3.0f, 0.5f, 2.0f);
             Math_ApproachS(&this->actor.world.rot.y, rot, 5, 0x3E8);
         } else {
             if (this->timer != 0) {
@@ -1682,7 +1726,9 @@ void BossGoma_WallClimb(BossGoma* this, PlayState* play) {
     if (this->actor.world.pos.y > -320.0f) {
         BossGoma_SetupCeilingMoveToCenter(this);
         // allow new spawns
-        this->childrenGohmaState[0] = this->childrenGohmaState[1] = this->childrenGohmaState[2] = 0;
+        for (s16 j = 0; j < ARRAY_COUNT(this->childrenGohmaState); j++) {
+            this->childrenGohmaState[j] = 0;
+        }
     }
 }
 
@@ -1749,8 +1795,11 @@ void BossGoma_UpdateEye(BossGoma* this, PlayState* play) {
             }
         }
 
-        if (this->childrenGohmaState[0] > 0 || this->childrenGohmaState[1] > 0 || this->childrenGohmaState[2] > 0) {
-            this->eyeClosedTimer = 7;
+        for (s16 j = 0; j < ARRAY_COUNT(this->childrenGohmaState); j++) {
+            if (this->childrenGohmaState[j] > 0) {
+                this->eyeClosedTimer = 7;
+                break;
+            }
         }
 
         if (this->eyeClosedTimer != 0) {
@@ -2186,7 +2235,7 @@ void BossGoma_Draw(Actor* thisx, PlayState* play) {
 
 void BossGoma_SpawnChildGohma(BossGoma* this, PlayState* play, s16 i) {
     Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_GOMA, this->lastTailLimbWorldPos.x,
-                       this->lastTailLimbWorldPos.y - 50.0f, this->lastTailLimbWorldPos.z, 0, i * (0x10000 / 3), 0, i);
+                       this->lastTailLimbWorldPos.y - 50.0f, this->lastTailLimbWorldPos.z, 0, i * (0x10000 / BossGoma_GetChildCount()), 0, i);
 
     this->childrenGohmaState[i] = 1;
 }

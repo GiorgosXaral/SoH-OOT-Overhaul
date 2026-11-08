@@ -183,4 +183,9 @@ typedef struct BossFd {
     /* 0x1970 */ BossFdEffect effects[180];
 } BossFd; // size = 0x43A0
 
+// Boss Overhaul helpers, shared with ovl_Boss_Fd2 (see include/boss_overhaul.h)
+s16 BossFd_GetPhaseHealth(struct BossFd* this);
+s32 BossFd_IsEnraged(struct BossFd* this);
+void BossFd_SpawnBonusRock(struct BossFd* this, PlayState* play, f32 x, f32 z);
+
 #endif

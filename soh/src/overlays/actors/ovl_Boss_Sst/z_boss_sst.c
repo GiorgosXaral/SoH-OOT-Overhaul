@@ -14,6 +14,7 @@
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "boss_overhaul.h"
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -200,6 +201,10 @@ static BossSst* sHead;
 static BossSst* sHands[2];
 static BgSstFloor* sFloor;
 
+// Boss Overhaul: Bongo Bongo is enraged when its head is at or below half health (and extra attacks are enabled).
+#define BONGO_ENRAGED() \
+    (BO_ATTACKS_ENABLED() && (sHead != NULL) && BO_BELOW_HALF((s8)sHead->actor.colChkInfo.health, 36))
+
 static Vec3f sRoomCenter = { ROOM_CENTER_X, ROOM_CENTER_Y, ROOM_CENTER_Z };
 static Vec3f sHandOffsets[2];
 static s16 sHandYawOffsets[2];
@@ -280,6 +285,9 @@ void BossSst_Init(Actor* thisx, PlayState* play2) {
     Collider_InitCylinder(play, &this->colliderCyl);
     Collider_InitJntSph(play, &this->colliderJntSph);
     CollisionCheck_SetInfo(&this->actor.colChkInfo, &sDamageTable, &sColChkInfoInit);
+    if (this->actor.params == BONGO_HEAD) {
+        this->actor.colChkInfo.health = BO_HP(36);
+    }
     Flags_SetSwitch(play, 0x14);
     if (this->actor.params == BONGO_HEAD) {
         sFloor = (BgSstFloor*)Actor_Spawn(&play->actorCtx, play, ACTOR_BG_SST_FLOOR, sRoomCenter.x, sRoomCenter.y,
@@ -676,6 +684,11 @@ void BossSst_HeadNeutral(BossSst* this, PlayState* play) {
             !(GET_PLAYER(play)->stateFlags1 &
               (PLAYER_STATE1_DEAD | PLAYER_STATE1_HANGING_OFF_LEDGE | PLAYER_STATE1_CLIMBING_LEDGE))) {
             sHands[Rand_ZeroOne() <= 0.5f]->ready = true;
+            if (BO_ATTACKS_ENABLED() && (Rand_ZeroOne() < (BONGO_ENRAGED() ? 0.7f : 0.3f))) {
+                // Boss Overhaul: sometimes both hands attack in quick succession
+                sHands[LEFT]->ready = true;
+                sHands[RIGHT]->ready = true;
+            }
             BossSst_HeadSetupWait(this);
         } else {
             this->timer = 28;
@@ -1506,6 +1519,15 @@ void BossSst_HandSlam(BossSst* this, PlayState* play) {
             this->timer--;
         }
 
+        if (BO_ATTACKS_ENABLED() && (this->timer == 20) && (this->colliderJntSph.base.acFlags & AC_ON)) {
+            // Boss Overhaul: the slam sends out a second shockwave
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_SHADEST_TAIKO_LOW);
+            BossSst_SpawnShockwave(this);
+            this->colliderCyl.base.atFlags |= AT_ON;
+            Collider_UpdateCylinder(&this->actor, &this->colliderCyl);
+            this->colliderCyl.dim.radius = sCylinderInitHand.dim.radius;
+        }
+
         if (this->timer == 0) {
             if (this->colliderJntSph.base.acFlags & AC_ON) {
                 BossSst_HandSetupEndSlam(this);
@@ -1575,7 +1597,7 @@ void BossSst_HandSetupSweep(BossSst* this) {
     Animation_MorphToPlayOnce(&this->skelAnime, sHandFlatPoses[this->actor.params], 5.0f);
     BossSst_HandSetDamage(this, 0x10);
     this->targetYaw = this->actor.home.rot.y - (this->vParity * 0x2000);
-    this->handMaxSpeed = 0x300;
+    this->handMaxSpeed = BO_ATTACKS_ENABLED() ? 0x3C0 : 0x300; // Boss Overhaul: faster sweep
     this->handAngSpeed = 0;
     this->ready = false;
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_SHADEST_FLY_ATTACK);
@@ -1709,7 +1731,7 @@ void BossSst_HandReadyClap(BossSst* this, PlayState* play) {
 void BossSst_HandSetupClap(BossSst* this) {
     Animation_MorphToPlayOnce(&this->skelAnime, sHandFlatPoses[this->actor.params], 3.0f);
     this->timer = 0;
-    this->handMaxSpeed = 0x240;
+    this->handMaxSpeed = BO_ATTACKS_ENABLED() ? 0x2C0 : 0x240; // Boss Overhaul: faster clap
     this->handAngSpeed = 0;
     this->ready = false;
     BossSst_HandSetDamage(this, 0x20);
@@ -2488,6 +2510,11 @@ void BossSst_HandSelectAttack(BossSst* this) {
     f32 rand = Rand_ZeroOne() * 6.0f;
     s32 randInt;
 
+    if (BONGO_ENRAGED() && (HAND_STATE(OTHER_HAND(this)) != HAND_DAMAGED)) {
+        // Boss Overhaul: an enraged Bongo Bongo claps more often (claps use randInt 5 and up)
+        rand = Rand_ZeroOne() * 7.0f;
+    }
+
     if (HAND_STATE(OTHER_HAND(this)) == HAND_DAMAGED) {
         rand *= 5.0f / 6;
         if (rand > 4.0f) {
@@ -2502,7 +2529,7 @@ void BossSst_HandSelectAttack(BossSst* this) {
         BossSst_HandSetupReadySweep(this);
     } else if (randInt == 2) {
         BossSst_HandSetupReadyPunch(this);
-    } else if (randInt == 5) {
+    } else if (randInt >= 5) {
         BossSst_HandSetupReadyClap(this);
     } else { // randInt == 3 || randInt == 4
         BossSst_HandSetupReadyGrab(this);
