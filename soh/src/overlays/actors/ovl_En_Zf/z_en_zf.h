@@ -119,6 +119,11 @@ typedef struct EnZf {
     /* 0x04E4 */ Vec3f rightFootPos;
     /* 0x04F0 */ Vec3f leftFootPos;
     /* 0x04FC */ Vec3f bodyPartsPos[9];
-} EnZf; // size = 0x0568
+    // Miniboss & Enemy Overhaul
+    u8 eoLanded;
+    u8 eoWaveDone;
+    s16 eoBreathTimer;
+    s16 eoBreath;
+} EnZf;
 
 #endif

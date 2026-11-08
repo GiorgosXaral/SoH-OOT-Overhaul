@@ -9,6 +9,7 @@
 #include "objects/object_dekunuts/object_dekunuts.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/ResourceManagerHelpers.h"
+#include "enemy_overhaul.h"
 
 #define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE)
 
@@ -316,6 +317,20 @@ void EnDekunuts_ThrowNut(EnDekunuts* this, PlayState* play) {
         if (Actor_Spawn(&play->actorCtx, play, ACTOR_EN_NUTSBALL, spawnPos.x, spawnPos.y, spawnPos.z,
                         this->actor.shape.rot.x, this->actor.shape.rot.y, this->actor.shape.rot.z, 0) != NULL) {
             Audio_PlayActorSound2(&this->actor, NA_SE_EN_NUTS_THROW);
+
+            // Miniboss & Enemy Overhaul: every other spit is a spread of three nuts. They can all be sent back.
+            if (EO_ENEMIES_ON() && ((++this->eoSpitCount % 2) == 0)) {
+                f32 sin = Math_SinS(this->actor.shape.rot.y);
+                f32 cos = Math_CosS(this->actor.shape.rot.y);
+                s32 i;
+
+                // set apart sideways so the nuts don't knock into each other
+                for (i = -1; i <= 1; i += 2) {
+                    Actor_Spawn(&play->actorCtx, play, ACTOR_EN_NUTSBALL, spawnPos.x + (i * 28.0f * cos), spawnPos.y,
+                                spawnPos.z - (i * 28.0f * sin), this->actor.shape.rot.x,
+                                this->actor.shape.rot.y + (i * 0x1000), this->actor.shape.rot.z, 0);
+                }
+            }
         }
     } else if ((this->animFlagAndTimer > 1) && Animation_OnFrame(&this->skelAnime, 12.0f)) {
         Animation_MorphToPlayOnce(&this->skelAnime, &gDekuNutsSpitAnim, -3.0f);

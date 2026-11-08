@@ -16,6 +16,7 @@
 #include "soh/Enhancements/nametag.h"
 
 #include "soh/ActorDB.h"
+#include "enemy_overhaul.h"
 #include "soh/OTRGlobals.h"
 
 #include <string.h>
@@ -2771,6 +2772,8 @@ void Actor_Draw(PlayState* play, Actor* actor) {
     }
 
     Matrix_Scale(actor->scale.x, actor->scale.y, actor->scale.z, MTXMODE_APPLY);
+    // Miniboss & Enemy Overhaul: elite enemies are drawn bigger
+    EnemyOverhaul_OnActorPreDraw(actor);
     Actor_SetObjectDependency(play, actor);
 
     gSPSegment(POLY_OPA_DISP++, 0x06, play->objectCtx.status[actor->objBankIndex].segment);

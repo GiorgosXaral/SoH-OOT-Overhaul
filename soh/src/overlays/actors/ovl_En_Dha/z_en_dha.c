@@ -8,6 +8,7 @@
 #include "overlays/actors/ovl_En_Dh/z_en_dh.h"
 #include "objects/object_dh/object_dh.h"
 #include "soh/ResourceManagerHelpers.h"
+#include "enemy_overhaul.h"
 
 #define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
@@ -23,6 +24,8 @@ void EnDha_TakeDamage(EnDha* this, PlayState* play);
 void EnDha_SetupDeath(EnDha* this);
 void EnDha_Die(EnDha* this, PlayState* play);
 void EnDha_UpdateHealth(EnDha* this, PlayState* play);
+void EnDha_EoSink(EnDha* this, PlayState* play);
+void EnDha_EoRise(EnDha* this, PlayState* play);
 
 const ActorInit En_Dha_InitVars = {
     ACTOR_EN_DHA,
@@ -166,6 +169,7 @@ void EnDha_Init(Actor* thisx, PlayState* play) {
     this->actor.colChkInfo.mass = MASS_HEAVY;
     this->actor.colChkInfo.health = 8;
     this->limbAngleX[0] = -0x4000;
+    this->eoSlamTimer = 90 + (s16)Rand_ZeroFloat(90.0f);
     Collider_InitJntSph(play, &this->collider);
     Collider_SetJntSph(play, &this->collider, &this->actor, &sJntSphInit, this->colliderItem);
     this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
@@ -212,7 +216,8 @@ void EnDha_Wait(EnDha* this, PlayState* play) {
         playerPos.y += 56.0f;
     }
 
-    if (this->actor.xzDistToPlayer <= 100.0f) {
+    // Miniboss & Enemy Overhaul: the hands reach for Link from a little further away
+    if (this->actor.xzDistToPlayer <= (EO_DEAD_HAND_ON() ? 125.0f : 100.0f)) {
         this->handAngle.y = this->handAngle.x = this->limbAngleY = 0;
 
         if (Math_Vec3f_DistXYZ(&playerPos, &this->handPos[0]) <= 12.0f) {
@@ -380,6 +385,126 @@ void EnDha_Die(EnDha* this, PlayState* play) {
     }
 }
 
+/**
+ * Miniboss & Enemy Overhaul: Dead Hand's hands.
+ *  - Ground slam: when Link lingers just out of reach, a hand shudders, then sends a tremor along the floor (jump it).
+ *  - Burrowing: when Link keeps well away from a hand, it sinks into the ground and pushes back up close to him.
+ * A hand can't be hurt while it is under the ground, and never moves while it holds Link.
+ */
+static void EnDha_EoReleasePlayer(EnDha* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+
+    if ((player->stateFlags2 & PLAYER_STATE2_GRABBED_BY_ENEMY) && (&this->actor == player->actor.parent)) {
+        player->stateFlags2 &= ~PLAYER_STATE2_GRABBED_BY_ENEMY;
+        player->actor.parent = NULL;
+        player->av2.actionVar2 = 200;
+    }
+}
+
+static s32 EnDha_EoFindSpotNearPlayer(EnDha* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    s32 try;
+
+    for (try = 0; try < 6; try++) {
+        Vec3f spot;
+
+        if (Eo_PosAround(play, &player->actor.world.pos, (s16)Rand_Next(), 95.0f + Rand_ZeroFloat(30.0f), &spot) &&
+            (Math_Vec3f_DistXZ(&spot, &this->actor.home.pos) < 700.0f) &&
+            (fabsf(spot.y - this->actor.home.pos.y) < 40.0f)) {
+            this->eoDest = spot;
+            return true;
+        }
+    }
+    return false;
+}
+
+void EnDha_EoSetupSink(EnDha* this) {
+    this->unk_1C0 = 8; // ignores hits while underground
+    this->actionTimer = 0;
+    EnDha_SetupAction(this, EnDha_EoSink);
+}
+
+void EnDha_EoSink(EnDha* this, PlayState* play) {
+    Vec3f pos = this->actor.world.pos;
+
+    EnDha_EoReleasePlayer(this, play);
+    Math_SmoothStepToS(&this->limbAngleX[1], 0, 1, 0x7D0, 0);
+    Math_SmoothStepToS(&this->limbAngleX[0], -0x4000, 1, 0x7D0, 0);
+    SkelAnime_Update(&this->skelAnime);
+
+    if (this->actor.shape.yOffset > -12000.0f) {
+        this->actor.shape.yOffset -= 1000.0f;
+        func_80033480(play, &pos, 7.0f, 1, 0x5A, 0x14, 1);
+    } else {
+        this->actor.world.pos = this->eoDest;
+        this->actor.shape.rot.y = this->actor.yawTowardsPlayer;
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_DEADHAND_HAND_AT);
+        EnDha_SetupAction(this, EnDha_EoRise);
+    }
+}
+
+void EnDha_EoRise(EnDha* this, PlayState* play) {
+    Vec3f pos = this->actor.world.pos;
+
+    SkelAnime_Update(&this->skelAnime);
+    this->actor.shape.yOffset += 500.0f;
+    func_80033480(play, &pos, 7.0f, 1, 0x5A, 0x14, 1);
+    if (this->actor.shape.yOffset >= 0.0f) {
+        this->actor.shape.yOffset = 0.0f;
+        this->unk_1C0 = 0;
+        this->eoFarTimer = 0;
+        EnDha_SetupWait(this);
+    }
+}
+
+void EnDha_EoExtras(EnDha* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    Vec3f pos;
+
+    if (!EO_DEAD_HAND_ON() || (this->actionFunc != EnDha_Wait) || (this->unk_1C0 >= 8) ||
+        (this->actor.parent == NULL) || (this->actor.parent->params == ENDH_DEATH) || !Eo_CanAttack(play) ||
+        ((player->stateFlags2 & PLAYER_STATE2_GRABBED_BY_ENEMY) && (&this->actor == player->actor.parent))) {
+        this->eoSlamCharge = 0;
+        return;
+    }
+
+    if (this->eoSlamCharge > 0) {
+        this->eoSlamCharge--;
+        if ((this->eoSlamCharge % 3) == 0) {
+            pos = this->actor.world.pos;
+            pos.x += Rand_CenteredFloat(40.0f);
+            pos.z += Rand_CenteredFloat(40.0f);
+            func_80033480(play, &pos, 10.0f, 1, 0x5A, 0x14, 1);
+        }
+        if (this->eoSlamCharge == 0) {
+            EoShot_Ring(play, &this->actor, EO_LOOK_DUST, &this->actor.world.pos, 240.0f, 9.0f, 0x08);
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_DEADHAND_GRIP);
+            this->eoSlamTimer = 150 + (s16)Rand_ZeroFloat(90.0f);
+        }
+        return;
+    }
+
+    if ((this->actor.xzDistToPlayer > 125.0f) && (this->actor.xzDistToPlayer < 230.0f)) {
+        if (this->eoSlamTimer > 0) {
+            this->eoSlamTimer--;
+        } else {
+            this->eoSlamCharge = 18;
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_DEADHAND_HAND_AT);
+        }
+    }
+
+    if (this->actor.xzDistToPlayer > 300.0f) {
+        this->eoFarTimer++;
+        if ((this->eoFarTimer > 150) && EnDha_EoFindSpotNearPlayer(this, play)) {
+            EnDha_EoSetupSink(this);
+        } else if (this->eoFarTimer > 150) {
+            this->eoFarTimer = 100; // try again in a moment
+        }
+    } else {
+        this->eoFarTimer = 0;
+    }
+}
+
 void EnDha_UpdateHealth(EnDha* this, PlayState* play) {
     if (!((this->unk_1C0 >= 8) || !(this->collider.base.acFlags & AC_HIT))) {
         this->collider.base.acFlags &= ~AC_HIT;
@@ -415,6 +540,7 @@ void EnDha_Update(Actor* thisx, PlayState* play) {
 
     EnDha_UpdateHealth(this, play);
     this->actionFunc(this, play);
+    EnDha_EoExtras(this, play);
     CollisionCheck_SetAC(play, &play->colChkCtx, &this->collider.base);
     CollisionCheck_SetOC(play, &play->colChkCtx, &this->collider.base);
 }

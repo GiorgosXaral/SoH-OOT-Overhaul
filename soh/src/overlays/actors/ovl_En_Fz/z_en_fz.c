@@ -2,6 +2,7 @@
 #include "objects/object_fz/object_fz.h"
 #include "soh/frame_interpolation.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "enemy_overhaul.h"
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -543,6 +544,14 @@ void EnFz_BlowSmoke(EnFz* this, PlayState* play) {
         pos.z += (velocity.z * 0.5f);
 
         EnFz_SpawnIceSmokeFreeze(this, &pos, &velocity, &accel, 2.0f, 25.0f, primAlpha, false);
+
+        // Miniboss & Enemy Overhaul: the breath ends with a spit of three ice shards
+        if (EO_ENEMIES_ON() && (this->timer == 11) && Eo_CanAttack(play)) {
+            pos.x = this->actor.world.pos.x + (Math_SinS(this->actor.shape.rot.y) * 30.0f);
+            pos.y = this->actor.world.pos.y + 25.0f;
+            pos.z = this->actor.world.pos.z + (Math_CosS(this->actor.shape.rot.y) * 30.0f);
+            EoShot_OrbFan(play, &this->actor, EO_KIND_ICE, &pos, 8.0f, 3, 0x1200);
+        }
     }
 }
 

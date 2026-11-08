@@ -2,6 +2,7 @@
 #include "objects/object_dh/object_dh.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/ResourceManagerHelpers.h"
+#include "enemy_overhaul.h"
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -151,7 +152,9 @@ void EnDh_Init(Actor* thisx, PlayState* play) {
     ActorShape_Init(&this->actor.shape, 0.0f, ActorShadow_DrawCircle, 64.0f);
     this->actor.params = ENDH_WAIT_UNDERGROUND;
     this->actor.colChkInfo.mass = MASS_HEAVY;
-    this->actor.colChkInfo.health = LINK_IS_ADULT ? 14 : 20;
+    this->actor.colChkInfo.health = EO_DEAD_HAND_HP(LINK_IS_ADULT ? 14 : 20);
+    this->eoMaxHealth = this->actor.colChkInfo.health;
+    this->eoSpitTimer = 120;
     this->alpha = this->unk_258 = 255;
     this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
     Collider_InitCylinder(play, &this->collider1);
@@ -233,6 +236,11 @@ void EnDh_Wait(EnDh* this, PlayState* play) {
                 }
                 break;
             case 2:
+                // Miniboss & Enemy Overhaul: he bursts out of the ground with a shockwave (jump it)
+                if (EO_DEAD_HAND_ON() && Eo_CanAttack(play)) {
+                    EoShot_Ring(play, &this->actor, EO_LOOK_DUST, &this->actor.world.pos, 320.0f, 10.0f, 0x10);
+                    Audio_PlayActorSound2(&this->actor, NA_SE_EN_DEADHAND_LAUGH);
+                }
                 EnDh_SetupWalk(this);
                 break;
         }
@@ -253,7 +261,68 @@ void EnDh_SetupWalk(EnDh* this) {
     EnDh_SetupAction(this, EnDh_Walk);
 }
 
+/**
+ * Miniboss & Enemy Overhaul: while he stalks Link, Dead Hand spits balls of cursed darkness at him (three at a time
+ * once he's badly hurt, when he also walks faster). He stops and cackles while he gathers each one.
+ * Returns true while he is winding up.
+ */
+s32 EnDh_EoWalkExtras(EnDh* this, PlayState* play) {
+    s32 enraged;
+    Vec3f pos;
+
+    if (!EO_DEAD_HAND_ON() || !Eo_CanAttack(play)) {
+        this->eoSpitCharge = 0;
+        return false;
+    }
+
+    enraged = EO_AT_OR_BELOW(this->actor.colChkInfo.health, this->eoMaxHealth, 1, 2);
+    pos = this->headPos;
+    if (pos.y < this->actor.world.pos.y + 20.0f) {
+        pos = this->actor.world.pos;
+        pos.y += 60.0f;
+    }
+
+    if (this->eoSpitCharge > 0) {
+        this->actor.speedXZ = 0.0f;
+        if ((this->eoSpitCharge % 3) == 0) {
+            Eo_DarkPuff(play, &pos, 0.5f);
+        }
+        this->eoSpitCharge--;
+        if (this->eoSpitCharge == 0) {
+            if (enraged) {
+                EoShot_OrbFan(play, &this->actor, EO_KIND_DARK, &pos, 9.0f, 3, 0x1800);
+            } else {
+                EoShot_OrbAimed(play, &this->actor, EO_KIND_DARK, &pos, 9.0f, 0);
+            }
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_DEADHAND_BITE);
+            this->eoSpitTimer = enraged ? (70 + (s16)Rand_ZeroFloat(30.0f)) : (100 + (s16)Rand_ZeroFloat(40.0f));
+            this->actor.speedXZ = 1.0f;
+        }
+        return true;
+    }
+
+    if (enraged && (this->actor.speedXZ > 0.0f)) {
+        this->actor.speedXZ = 1.7f;
+    }
+
+    if (this->actor.xzDistToPlayer > 180.0f) {
+        if (this->eoSpitTimer > 0) {
+            this->eoSpitTimer--;
+        } else {
+            this->eoSpitCharge = 20;
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_DEADHAND_LAUGH);
+        }
+    }
+    return false;
+}
+
 void EnDh_Walk(EnDh* this, PlayState* play) {
+    if (EnDh_EoWalkExtras(this, play)) {
+        Math_SmoothStepToS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 1, 0x3E8, 0);
+        this->actor.world.rot.y = this->actor.shape.rot.y;
+        SkelAnime_Update(&this->skelAnime);
+        return;
+    }
     Math_SmoothStepToS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 1, 0xFA, 0);
     this->actor.world.rot.y = this->actor.shape.rot.y;
     SkelAnime_Update(&this->skelAnime);
@@ -493,9 +562,9 @@ void EnDh_CollisionCheck(EnDh* this, PlayState* play) {
                 EnDh_SetupDeath(this);
                 Item_DropCollectibleRandom(play, &this->actor, &this->actor.world.pos, 0x90);
             } else {
-                if (((lastHealth >= 15) && (this->actor.colChkInfo.health < 15)) ||
-                    ((lastHealth >= 9) && (this->actor.colChkInfo.health < 9)) ||
-                    ((lastHealth >= 3) && (this->actor.colChkInfo.health < 3))) {
+                if (((lastHealth >= EO_DEAD_HAND_HP(15)) && (this->actor.colChkInfo.health < EO_DEAD_HAND_HP(15))) ||
+                    ((lastHealth >= EO_DEAD_HAND_HP(9)) && (this->actor.colChkInfo.health < EO_DEAD_HAND_HP(9))) ||
+                    ((lastHealth >= EO_DEAD_HAND_HP(3)) && (this->actor.colChkInfo.health < EO_DEAD_HAND_HP(3)))) {
 
                     this->retreat++;
                 }

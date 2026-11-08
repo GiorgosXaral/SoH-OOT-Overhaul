@@ -67,6 +67,8 @@ typedef struct EnGeldB {
     /* 0x04C4 */ Vec3f rightFootPos;
     /* 0x04D0 */ Vec3f leftFootPos;
     /* 0x04DC */ Vec3s headRot;
-} EnGeldB; // size = 0x04E4
+    // Miniboss & Enemy Overhaul
+    s16 eoFlashCooldown;
+} EnGeldB;
 
 #endif

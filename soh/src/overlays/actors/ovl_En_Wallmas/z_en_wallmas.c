@@ -9,6 +9,7 @@
 #include "objects/gameplay_keep/gameplay_keep.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/ResourceManagerHelpers.h"
+#include "enemy_overhaul.h"
 
 #define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
@@ -197,6 +198,14 @@ void EnWallmas_SetupLand(EnWallmas* this, PlayState* play) {
     Actor_SpawnFloorDustRing(play, &this->actor, &this->actor.world.pos, 15.0f, 6, 20.0f, 300, 100, true);
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FALL_LAND);
     this->actionFunc = EnWallmas_Land;
+
+    // Miniboss & Enemy Overhaul: a Wallmaster that misses slams the floor, sending out a shockwave
+    if (EO_ENEMIES_ON()) {
+        Vec3f ringPos = this->actor.world.pos;
+
+        ringPos.y = this->actor.floorHeight;
+        EoShot_Ring(play, &this->actor, EO_LOOK_DUST, &ringPos, 140.0f, 5.0f, 0x08);
+    }
 }
 
 void EnWallmas_SetupStand(EnWallmas* this) {

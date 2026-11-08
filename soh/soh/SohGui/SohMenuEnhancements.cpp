@@ -1371,6 +1371,83 @@ void SohMenu::AddMenuEnhancements() {
             "All main bosses (Gohma through Ganon) gain additional attacks, and become more aggressive once "
             "they are badly hurt.\n\n"
             "Takes effect the next time a boss fight starts."));
+    AddWidget(path, "Miniboss & Enemy Overhaul", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "Minibosses: Double HP", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("EnemyOverhaul.MinibossHP"))
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Minibosses have twice as much health: the Dodongo's Cavern Lizalfos, Stalfos, Big Octo, Flare Dancer, "
+            "Iron Knuckles (Nabooru included), the Gerudo fighters, the Poe Sisters, and the Wolfos and White "
+            "Wolfos placed in rooms (not the ones roaming Hyrule Field).\n\n"
+            "Dark Link and Dead Hand have their own setting below.\n\n"
+            "Takes effect the next time a miniboss appears."));
+    AddWidget(path, "Minibosses: New Attacks", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("EnemyOverhaul.MinibossAttacks"))
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Every miniboss learns new moves, made only of things already in the game:\n"
+            "- Lizalfos (Dodongo's Cavern): landing shockwaves, and slashes that carry along the floor\n"
+            "- Stalfos: floor-splitting chops, landing shockwaves, and a shield that can shove Link back\n"
+            "- Big Octo: water jets while circling and a wave when it belly-flops\n"
+            "- Flare Dancer: fireballs, burning footprints and rings of fire; the core spits fire as it runs\n"
+            "- Iron Knuckle: a boomerang axe throw and floor-splitting smashes; the armor bursts off with a "
+            "shockwave\n"
+            "- Gerudo fighters: a dust sweep after the spin, landing shockwaves, and a vanishing strike from behind\n"
+            "- Poe Sisters: each throws a ball of her own color\n"
+            "- Wolfos: a badly hurt miniboss Wolfos howls for help; White Wolfos claws can freeze\n\n"
+            "Vanilla openings are never shortened, and anything a miniboss calls in vanishes when it falls. "
+            "Shockwaves along the floor can be cleared with any jump, sidehop or backflip."));
+    AddWidget(path, "Dark Link Rework", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("EnemyOverhaul.DarkLink"))
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Dark Link has twice as much health and fights much harder: he throws shadow bolts when kept at a "
+            "distance (and dodges arrows to answer with one), bursts into a ring of darkness when Link stays close, "
+            "and once badly hurt swings twice as often and rises from the water in darkness.\n\n"
+            "He stands still while winding up either move - a good moment to hit him."));
+    AddWidget(path, "Dead Hand Rework", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("EnemyOverhaul.DeadHand"))
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Dead Hand has twice as much health and fights much harder: he bursts out of the ground with a "
+            "shockwave, spits balls of cursed darkness (three at once when badly hurt, when he also walks faster), "
+            "and his hands reach further, slam the floor to send tremors at Link and burrow up close to him when he "
+            "keeps away."));
+    AddWidget(path, "Enemies: New Tricks", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("EnemyOverhaul.Enemies"))
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Regular enemies get a new trick each:\n"
+            "- ReDead: its scream wakes the dead nearby, who chase Link further than usual\n"
+            "- Gibdo: sudden lunges\n"
+            "- Like Like: breathes in with its mouth open, dragging Link towards it (Iron Boots hold firm)\n"
+            "- Octorok: every third shot is a spread of three rocks\n"
+            "- Mad Scrub: every other spit is a spread of three nuts (all can be sent back)\n"
+            "- Armos: the last hop of a lunge sends out a shockwave\n"
+            "- Wallmaster: a missed grab slams the floor with a shockwave\n"
+            "- Freezard: its icy breath ends with a spit of ice shards\n"
+            "- Poe: flicks embers from its lantern while Link watches it\n"
+            "- Lizalfos (outside Dodongo's Cavern): landing shockwaves\n"
+            "- Dinolfos: breathe fire at middle distance"));
+    AddWidget(path, "More Encounters", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("EnemyOverhaul.Encounters"))
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Some enemies bring one or two of their own kind along, and a few regions add a creature that belongs "
+            "there (Keese with the field's Stalchildren, Withered Deku Babas in the forest, Fire Keese on the "
+            "mountain...). Hyrule Field's Stalchildren, the Leevers, Tektites and Wolfos sometimes send one "
+            "more.\n\n"
+            "Never in boss rooms, shops, minigames, grottos, houses or the Thieves' Hideout."));
+    AddWidget(path, "More Encounters: In Dungeons", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("EnemyOverhaul.EncountersInDungeons"))
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Also adds companions inside dungeons, except in rooms whose door, chest or gate opens once every enemy "
+            "is defeated."));
+    AddWidget(path, "Rare Elite Enemies", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("EnemyOverhaul.Elites"))
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "About one enemy in twenty is an elite: bigger, sparkling gold, with twice the health, and it drops a "
+            "bonus item (a red or purple rupee, or whatever Link is shortest of) when defeated."));
+    AddWidget(path, "Ganon's Reign", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("EnemyOverhaul.GanonsReign"))
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Once Ganondorf rules Hyrule (as adult Link), companions are twice as common, three times at night, "
+            "and elites show up more often at night.\n\n"
+            "Needs More Encounters and/or Rare Elite Enemies."));
     AddWidget(path, "Hyper Bosses", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("HyperBosses"))
         .Callback([](WidgetInfo& info) { UpdateHyperBossesState(); })

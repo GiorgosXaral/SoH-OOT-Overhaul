@@ -8,6 +8,7 @@
 #include "objects/object_rr/object_rr.h"
 #include "vt.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "enemy_overhaul.h"
 #include <assert.h>
 
 #define FLAGS                                                                                 \
@@ -583,6 +584,38 @@ void EnRr_Approach(EnRr* this, PlayState* play) {
     }
 }
 
+/**
+ * Miniboss & Enemy Overhaul: with its mouth open, a Like Like breathes in, dragging Link (and the dust around him)
+ * towards it. He can walk out of it, and Iron Boots hold him in place.
+ */
+void EnRr_EoInhale(EnRr* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    Vec3f pos;
+    Vec3f velocity;
+    Vec3f accel = { 0.0f, 0.0f, 0.0f };
+    s16 yaw;
+    f32 dist;
+
+    if ((this->actor.xzDistToPlayer > 50.0f) && (this->actor.xzDistToPlayer < 260.0f) &&
+        (fabsf(this->actor.yDistToPlayer) < 60.0f) && Eo_CanAttack(play) && Eo_PlayerOnGround(play) &&
+        (player->currentBoots != PLAYER_BOOTS_IRON) && !(player->stateFlags2 & PLAYER_STATE2_GRABBED_BY_ENEMY)) {
+        player->pushedYaw = this->actor.yawTowardsPlayer + 0x8000;
+        player->pushedSpeed = 3.5f;
+    }
+
+    if ((this->frameCount % 2) == 0) {
+        yaw = this->actor.yawTowardsPlayer + (s16)Rand_CenteredFloat(0x4000);
+        dist = 70.0f + Rand_ZeroFloat(90.0f);
+        pos.x = this->mouthPos.x + (Math_SinS(yaw) * dist);
+        pos.y = this->actor.world.pos.y + 5.0f + Rand_ZeroFloat(40.0f);
+        pos.z = this->mouthPos.z + (Math_CosS(yaw) * dist);
+        velocity.x = (this->mouthPos.x - pos.x) * 0.09f;
+        velocity.y = (this->mouthPos.y - pos.y) * 0.09f;
+        velocity.z = (this->mouthPos.z - pos.z) * 0.09f;
+        func_800286CC(play, &pos, &velocity, &accel, 60, 10);
+    }
+}
+
 void EnRr_Reach(EnRr* this, PlayState* play) {
     Math_SmoothStepToS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 0xA, 0x1F4, 0);
     this->actor.world.rot.y = this->actor.shape.rot.y;
@@ -618,6 +651,13 @@ void EnRr_Reach(EnRr* this, PlayState* play) {
                 EnRr_SetupNeutral(this);
             }
             break;
+    }
+
+    // Miniboss & Enemy Overhaul
+    if (EO_ENEMIES_ON() && (this->actionFunc == EnRr_Reach) &&
+        ((this->reachState == REACH_OPEN) || (this->reachState == REACH_GAPE) ||
+         ((this->reachState == REACH_CLOSE) && (this->actionTimer > 6)))) {
+        EnRr_EoInhale(this, play);
     }
 }
 

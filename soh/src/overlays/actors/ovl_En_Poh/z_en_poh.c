@@ -9,6 +9,7 @@
 #include "objects/object_po_composer/object_po_composer.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/ResourceManagerHelpers.h"
+#include "enemy_overhaul.h"
 
 #define FLAGS \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_IGNORE_QUAKE)
@@ -279,6 +280,9 @@ void func_80ADE1BC(EnPoh* this) {
     this->actionFunc = func_80ADEC9C;
     this->unk_198 = 0;
     this->actor.speedXZ = 2.0f;
+    if (this->eoEmberTimer < 30) {
+        this->eoEmberTimer = 30;
+    }
 }
 
 void EnPoh_SetupAttack(EnPoh* this) {
@@ -538,6 +542,22 @@ void func_80ADEC9C(EnPoh* this, PlayState* play) {
         Math_ScaledStepToS(&this->actor.world.rot.y, this->actor.yawTowardsPlayer, 0x71C);
     }
     EnPoh_MoveTowardsPlayerHeight(this, play);
+
+    // Miniboss & Enemy Overhaul: while Link keeps an eye on it, a Poe flicks embers from its lantern at him
+    if (EO_ENEMIES_ON() && (this->lightColor.a == 255)) {
+        if (this->eoEmberTimer > 0) {
+            this->eoEmberTimer--;
+        } else if ((this->actor.xzDistToPlayer > 90.0f) && Player_IsFacingActor(&this->actor, 0x2AAA, play) &&
+                   Eo_CanAttack(play)) {
+            Vec3f pos = this->actor.world.pos;
+
+            pos.y += 25.0f;
+            EoShot_OrbAimed(play, &this->actor, EO_KIND_EMBER, &pos, 6.0f, 0);
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_PO_LAUGH);
+            this->eoEmberTimer = 70 + (s16)Rand_ZeroFloat(50.0f);
+        }
+    }
+
     if (this->actor.xzDistToPlayer > 280.0f) {
         EnPoh_SetupIdle(this);
     } else if (this->unk_198 == 0 && this->actor.xzDistToPlayer < 140.0f &&

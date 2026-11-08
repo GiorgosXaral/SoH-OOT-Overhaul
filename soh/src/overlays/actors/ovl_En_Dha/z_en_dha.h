@@ -25,6 +25,11 @@ typedef struct EnDha {
     /* 0x01F4 */ Vec3f armPos;
     /* 0x0200 */ ColliderJntSph collider;
     /* 0x0220 */ ColliderJntSphElement colliderItem[5];
-} EnDha; // size = 0x0360
+    // Miniboss & Enemy Overhaul
+    s16 eoSlamTimer;
+    s16 eoSlamCharge;
+    s16 eoFarTimer;
+    Vec3f eoDest;
+} EnDha;
 
 #endif

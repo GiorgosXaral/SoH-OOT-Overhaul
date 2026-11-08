@@ -10,6 +10,7 @@
 #include "vt.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/ResourceManagerHelpers.h"
+#include "enemy_overhaul.h"
 
 #define FLAGS ACTOR_FLAG_UPDATE_CULLING_DISABLED
 
@@ -53,6 +54,7 @@ void func_80A77ED0(EnIk* this, PlayState* play);
 void func_80A77EDC(EnIk* this, PlayState* play);
 void func_80A78160(EnIk* this, PlayState* play);
 void func_80A781CC(Actor* thisx, PlayState* play);
+void EnIk_EoThrowAxe(EnIk* this, PlayState* play);
 
 static ColliderCylinderInit sCylinderInit = {
     {
@@ -204,13 +206,15 @@ void func_80A74398(Actor* thisx, PlayState* play) {
     thisx->colChkInfo.damageTable = &sDamageTable;
     thisx->colChkInfo.mass = MASS_HEAVY;
     this->unk_2FC = 0;
-    thisx->colChkInfo.health = 30;
+    thisx->colChkInfo.health = EO_HP2(30);
     thisx->gravity = -1.0f;
     this->switchFlags = (thisx->params >> 8) & 0xFF;
     thisx->params &= 0xFF;
+    this->eoAxeCooldown = 150;
 
     if (thisx->params == 0) {
-        thisx->colChkInfo.health += 20;
+        // Nabooru is beaten once she is down to 10: double the 40 above that
+        thisx->colChkInfo.health = EO_HP2(40) + 10;
         thisx->naviEnemyId = 0x34;
     } else {
         Actor_SetScale(thisx, 0.012f);
@@ -233,6 +237,7 @@ void func_80A74398(Actor* thisx, PlayState* play) {
 
     Effect_Add(play, &this->blureIdx, EFFECT_BLURE1, 0, 0, &blureInit);
     func_80A74714(this);
+    this->eoMaxHealth = thisx->colChkInfo.health;
 
     uint8_t enemyRandoCCActive = CVarGetInteger(CVAR_ENHANCEMENT("RandomizedEnemies"), 0) ||
                                  (CVarGetInteger(CVAR_REMOTE_CROWD_CONTROL("Enabled"), 0));
@@ -252,7 +257,7 @@ void func_80A74398(Actor* thisx, PlayState* play) {
 }
 
 s32 func_80A745E4(EnIk* this, PlayState* play) {
-    if (((this->unk_2FB != 0) || (this->actor.params == 0)) &&
+    if ((this->eoAxeThrown == 0) && ((this->unk_2FB != 0) || (this->actor.params == 0)) &&
         (func_800354B4(play, &this->actor, 100.0f, 0x2710, 0x4000, this->actor.shape.rot.y) != 0) &&
         (play->gameplayFrames & 1)) {
         func_80A755F0(this);
@@ -333,6 +338,18 @@ void func_80A7492C(EnIk* this, PlayState* play) {
     s32 phi_a0 = (this->unk_2FB == 0) ? 0xAAA : 0x3FFC;
     s16 yawDiff = this->actor.yawTowardsPlayer - this->actor.shape.rot.y;
 
+    // Miniboss & Enemy Overhaul: empty-handed, he waits for his axe to come back
+    if (this->eoAxeThrown) {
+        if ((EoShot_CountOwned(&this->actor, EO_SHOT_BOOMERANG) == 0) || (--this->eoAxeWait <= 0)) {
+            this->eoAxeThrown = 0;
+        } else {
+            Math_SmoothStepToS(&this->actor.world.rot.y, this->actor.yawTowardsPlayer, 1, 0x3E8, 0);
+            this->actor.shape.rot.y = this->actor.world.rot.y;
+            SkelAnime_Update(&this->skelAnime);
+            return;
+        }
+    }
+
     if ((ABS(yawDiff) <= phi_a0) && (this->actor.xzDistToPlayer < 100.0f) &&
         (ABS(this->actor.yDistToPlayer) < 150.0f)) {
         if ((play->gameplayFrames & 1)) {
@@ -393,6 +410,24 @@ void func_80A74BA4(EnIk* this, PlayState* play) {
     }
     this->actor.shape.rot.y = this->actor.world.rot.y;
     yawDiff = this->actor.yawTowardsPlayer - this->actor.shape.rot.y;
+
+    // Miniboss & Enemy Overhaul: from a distance he hurls his axe, which comes back to him like a boomerang
+    if (EO_MB_ATTACKS_ON() && (this->eoAxeCooldown == 0) && (this->actor.xzDistToPlayer > 200.0f) &&
+        (this->actor.xzDistToPlayer < 420.0f) && (ABS(yawDiff) < 0x1000) && (ABS(this->actor.yDistToPlayer) < 60.0f) &&
+        Eo_CanAttack(play)) {
+        f32 frames = Animation_GetLastFrame(&gIronKnuckleHorizontalAttackAnim);
+
+        this->unk_2F8 = 6;
+        this->unk_2FE = 0;
+        this->unk_2FF = 0;
+        this->actor.speedXZ = 0.0f;
+        Animation_Change(&this->skelAnime, &gIronKnuckleHorizontalAttackAnim, 1.0f, 0.0f, frames,
+                         ANIMMODE_ONCE_INTERP, -6.0f);
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_IRONNACK_DASH);
+        EnIk_SetupAction(this, EnIk_EoThrowAxe);
+        return;
+    }
+
     if ((ABS(yawDiff) <= temp_t0) && (this->actor.xzDistToPlayer < 100.0f)) {
         if (ABS(this->actor.yDistToPlayer) < 150.0f) {
             if ((play->gameplayFrames & 1)) {
@@ -446,6 +481,11 @@ void func_80A74EBC(EnIk* this, PlayState* play) {
         Camera_AddQuake(&play->mainCamera, 2, 0x19, 5);
         func_800AA000(this->actor.xzDistToPlayer, 0xFF, 0x14, 0x96);
         CollisionCheck_SpawnShieldParticles(play, &sp2C);
+        // Miniboss & Enemy Overhaul: the smash splits the floor towards Link (three ways once his armor is off)
+        if (EO_MB_ATTACKS_ON() && Eo_CanAttack(play)) {
+            EoShot_GroundWaveFan(play, &this->actor, EO_LOOK_DUST, &sp2C, (this->unk_2FB != 0) ? 3 : 1, 0x1400, 11.0f,
+                                 45, 0x10);
+        }
     }
 
     if ((this->skelAnime.curFrame > 17.0f) && (this->skelAnime.curFrame < 23.0f)) {
@@ -487,6 +527,37 @@ void func_80A7510C(EnIk* this, PlayState* play) {
             Animation_Change(&this->skelAnime, &gIronKnuckleRecoverFromVerticalAttackAnim, 1.5f, 0.0f, frames,
                              ANIMMODE_ONCE_INTERP, -4.0f);
         }
+    }
+}
+
+/**
+ * Miniboss & Enemy Overhaul: the axe throw. He swings as for his sideways slash and lets go at the end of it; then he
+ * stands empty-handed (and open to attack) until the axe comes back.
+ */
+void EnIk_EoThrowAxe(EnIk* this, PlayState* play) {
+    Math_SmoothStepToS(&this->actor.world.rot.y, this->actor.yawTowardsPlayer, 1, 0x3E8, 0);
+    this->actor.shape.rot.y = this->actor.world.rot.y;
+
+    if (!this->eoAxeThrown && (this->skelAnime.curFrame >= 11.0f)) {
+        Vec3f pos = this->actor.world.pos;
+
+        pos.y += 70.0f;
+        pos.x += Math_SinS(this->actor.shape.rot.y) * 40.0f;
+        pos.z += Math_CosS(this->actor.shape.rot.y) * 40.0f;
+        if (EoShot_Boomerang(play, &this->actor, (Gfx*)gIronKnuckleAxeDL, this->actor.scale.x, &pos,
+                             this->actor.yawTowardsPlayer, 19.0f, 0x10) != NULL) {
+            this->eoAxeThrown = 1;
+            this->eoAxeWait = 150;
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_IRONNACK_SWING_AXE);
+        }
+        this->eoAxeCooldown = 240 + (s16)Rand_ZeroFloat(120.0f);
+    }
+
+    if (SkelAnime_Update(&this->skelAnime)) {
+        if (!this->eoAxeThrown) {
+            this->eoAxeCooldown = 120;
+        }
+        func_80A7489C(this);
     }
 }
 
@@ -722,9 +793,13 @@ void func_80A75C38(EnIk* this, PlayState* play) {
     prevHealth = this->actor.colChkInfo.health;
     Actor_ApplyDamage(&this->actor);
     if (this->actor.params != 0) {
-        if ((prevHealth > 10) && (this->actor.colChkInfo.health <= 10)) {
+        if ((prevHealth > EO_HP2(10)) && (this->actor.colChkInfo.health <= EO_HP2(10))) {
             this->unk_2FB = 1;
             BodyBreak_Alloc(&this->bodyBreak, 3, play);
+            // Miniboss & Enemy Overhaul: the armor bursts off with a shockwave
+            if (EO_MB_ATTACKS_ON() && Eo_CanAttack(play)) {
+                EoShot_Ring(play, &this->actor, EO_LOOK_DUST, &this->actor.world.pos, 260.0f, 10.0f, 0x08);
+            }
         }
     } else if (this->actor.colChkInfo.health <= 10) {
         Actor_ChangeCategory(play, &play->actorCtx, &this->actor, ACTORCAT_BOSS);
@@ -733,7 +808,7 @@ void func_80A75C38(EnIk* this, PlayState* play) {
             Flags_SetSwitch(play, this->switchFlags);
         }
         return;
-    } else if (prevHealth == 50) {
+    } else if (prevHealth == this->eoMaxHealth) {
         Actor_ChangeCategory(play, &play->actorCtx, &this->actor, ACTORCAT_ENEMY);
     }
 
@@ -749,7 +824,7 @@ void func_80A75C38(EnIk* this, PlayState* play) {
         }
     }
     if ((this->actor.params != 0) && (this->unk_2FB != 0)) {
-        if ((prevHealth > 10) && (this->actor.colChkInfo.health <= 10)) {
+        if ((prevHealth > EO_HP2(10)) && (this->actor.colChkInfo.health <= EO_HP2(10))) {
             Audio_PlayActorSound2(&this->actor, NA_SE_EN_IRONNACK_ARMOR_OFF_DEMO);
         } else {
             Audio_PlayActorSound2(&this->actor, NA_SE_EN_IRONNACK_DAMAGE);
@@ -770,6 +845,9 @@ void func_80A75FA0(Actor* thisx, PlayState* play) {
     u8 prevInvincibilityTimer;
 
     this->unk_2FA = this->unk_2FB;
+    if (this->eoAxeCooldown > 0) {
+        this->eoAxeCooldown--;
+    }
     func_80A75C38(this, play);
     if ((this->actor.params == 0) && (this->actor.colChkInfo.health <= 10)) {
         func_80A781CC(&this->actor, play);
@@ -840,6 +918,11 @@ s32 EnIk_OverrideLimbDraw3(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* p
     } else if (limbIndex == 13) {
         if (this->actor.params != 0) {
             *dList = gIronKnuckleGerudoHeadDL;
+        }
+    } else if (limbIndex == 17) {
+        // Miniboss & Enemy Overhaul: the axe is in the air
+        if (this->eoAxeThrown) {
+            *dList = NULL;
         }
     } else if ((limbIndex == 26) || (limbIndex == 27)) {
         if ((this->unk_2FA & 1)) {

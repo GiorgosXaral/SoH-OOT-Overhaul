@@ -10,6 +10,7 @@
 #include "objects/gameplay_keep/gameplay_keep.h"
 #include "soh/frame_interpolation.h"
 #include "soh/ResourceManagerHelpers.h"
+#include "enemy_overhaul.h"
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -371,6 +372,19 @@ void EnFw_Update(Actor* thisx, PlayState* play) {
         Actor_MoveXZGravity(&this->actor);
         Actor_UpdateBgCheckInfo(play, &this->actor, 10.0f, 20.0f, 0.0f, 5);
         this->actionFunc(this, play);
+        // Miniboss & Enemy Overhaul: the exposed core spits fireballs while it runs
+        if (EO_MB_ATTACKS_ON() && (this->actionFunc == EnFw_Run) && (this->damageTimer == 0) &&
+            (this->explosionTimer == 0) && Eo_CanAttack(play)) {
+            if (this->eoOrbTimer == 0) {
+                this->eoOrbTimer = 50;
+            } else if ((--this->eoOrbTimer == 0) && (this->actor.xzDistToPlayer > 120.0f)) {
+                Vec3f pos = this->actor.world.pos;
+
+                pos.y += 30.0f;
+                EoShot_OrbAimed(play, &this->actor, EO_KIND_FIRE, &pos, 9.0f, 0);
+                this->eoOrbTimer = 60 + (s16)Rand_ZeroFloat(30.0f);
+            }
+        }
         if (this->damageTimer == 0 && this->explosionTimer == 0 && this->actionFunc == EnFw_Run) {
             CollisionCheck_SetAC(play, &play->colChkCtx, &this->collider.base);
         }

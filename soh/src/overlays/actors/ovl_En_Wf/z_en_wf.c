@@ -10,6 +10,7 @@
 #include "objects/object_wf/object_wf.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/ResourceManagerHelpers.h"
+#include "enemy_overhaul.h"
 
 #define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
@@ -723,6 +724,14 @@ void EnWf_RunAroundPlayer(EnWf* this, PlayState* play) {
 void EnWf_SetupSlash(EnWf* this) {
     Animation_PlayOnce(&this->skelAnime, &gWolfosSlashingAnim);
     this->colliderSpheres.base.atFlags &= ~AT_BOUNCED;
+    // Miniboss & Enemy Overhaul: a White Wolfos' claws freeze one slash in three
+    if ((this->actor.params == WOLFOS_WHITE) && this->eoMiniboss && EO_MB_ATTACKS_ON() && (Rand_ZeroOne() < 0.33f)) {
+        this->colliderSpheres.elements[0].info.toucher.effect = this->colliderSpheres.elements[1].info.toucher.effect =
+            2;
+    } else {
+        this->colliderSpheres.elements[0].info.toucher.effect = this->colliderSpheres.elements[1].info.toucher.effect =
+            0;
+    }
     this->actor.shape.rot.y = this->actor.yawTowardsPlayer;
     this->action = WOLFOS_ACTION_SLASH;
     this->unk_2FA = 0; // Set and not used
@@ -1251,6 +1260,31 @@ void func_80B36F40(EnWf* this, PlayState* play) {
     }
 }
 
+/**
+ * Miniboss & Enemy Overhaul: a miniboss Wolfos that is badly hurt howls, and another of its kind answers from behind
+ * Link. The newcomer vanishes if the one that called it falls.
+ */
+void EnWf_EoHowl(EnWf* this, PlayState* play) {
+    Vec3f pos;
+
+    if (!this->eoMiniboss || this->eoHowled || !EO_MB_ATTACKS_ON() ||
+        !EO_AT_OR_BELOW(this->actor.colChkInfo.health, this->eoMaxHealth, 1, 2) || !Eo_CanAttack(play)) {
+        return;
+    }
+    this->eoHowled = true;
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_WOLFOS_CRY);
+
+    if ((EoSummon_Count(&this->actor) == 0) && Eo_PosBehindPlayer(play, 200.0f, &pos)) {
+        Actor* helper = EoSummon_Spawn(play, &this->actor, ACTOR_EN_WF, &pos,
+                                       Math_Vec3f_Yaw(&pos, &GET_PLAYER(play)->actor.world.pos),
+                                       (0xFF << 8) | (this->actor.params & 0xFF));
+
+        if (helper != NULL) {
+            ((EnWf*)helper)->eoInitDone = true; // a helper is a regular Wolfos
+        }
+    }
+}
+
 void EnWf_UpdateDamage(EnWf* this, PlayState* play) {
     if (this->colliderSpheres.base.acFlags & AC_BOUNCED) {
         this->colliderSpheres.base.acFlags &= ~(AC_HIT | AC_BOUNCED);
@@ -1294,6 +1328,7 @@ void EnWf_UpdateDamage(EnWf* this, PlayState* play) {
                         Enemy_StartFinishingBlow(play, &this->actor);
                     } else {
                         EnWf_SetupDamaged(this);
+                        EnWf_EoHowl(this, play);
                     }
                 }
             }
@@ -1304,6 +1339,17 @@ void EnWf_UpdateDamage(EnWf* this, PlayState* play) {
 void EnWf_Update(Actor* thisx, PlayState* play) {
     s32 pad;
     EnWf* this = (EnWf*)thisx;
+
+    // Miniboss & Enemy Overhaul: Wolfos placed in rooms (Sacred Forest Meadow, the Ice Cavern...) are minibosses;
+    // the ones Hyrule Field's spawners send out stay regular enemies. Only known once the spawner has claimed it.
+    if (!this->eoInitDone) {
+        this->eoInitDone = true;
+        if ((this->actor.parent == NULL) || (this->actor.parent->id != ACTOR_EN_ENCOUNT1)) {
+            this->eoMiniboss = true;
+            this->actor.colChkInfo.health = EO_HP2(this->actor.colChkInfo.health);
+        }
+        this->eoMaxHealth = this->actor.colChkInfo.health;
+    }
 
     EnWf_UpdateDamage(this, play);
 

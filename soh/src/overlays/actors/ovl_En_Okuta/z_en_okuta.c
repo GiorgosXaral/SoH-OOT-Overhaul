@@ -1,5 +1,6 @@
 #include "z_en_okuta.h"
 #include "objects/object_okuta/object_okuta.h"
+#include "enemy_overhaul.h"
 #include "objects/gameplay_field_keep/gameplay_field_keep.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/ResourceManagerHelpers.h"
@@ -279,6 +280,17 @@ void EnOkuta_SpawnProjectile(EnOkuta* this, PlayState* play) {
     pos.z = this->actor.world.pos.z + (25.0f * cos);
     if (Actor_Spawn(&play->actorCtx, play, ACTOR_EN_OKUTA, pos.x, pos.y, pos.z, this->actor.shape.rot.x,
                     this->actor.shape.rot.y, this->actor.shape.rot.z, 0x10) != NULL) {
+        // Miniboss & Enemy Overhaul: every third shot is a spread of three rocks
+        if (EO_ENEMIES_ON() && ((++this->eoShotCount % 3) == 0)) {
+            s32 i;
+
+            // set apart sideways so the rocks don't knock into each other
+            for (i = -1; i <= 1; i += 2) {
+                Actor_Spawn(&play->actorCtx, play, ACTOR_EN_OKUTA, pos.x + (i * 30.0f * cos), pos.y,
+                            pos.z - (i * 30.0f * sin), this->actor.shape.rot.x,
+                            this->actor.shape.rot.y + (i * 0x1400), this->actor.shape.rot.z, 0x10);
+            }
+        }
         pos.x = this->actor.world.pos.x + (40.0f * sin);
         pos.z = this->actor.world.pos.z + (40.0f * cos);
         pos.y = this->actor.world.pos.y;

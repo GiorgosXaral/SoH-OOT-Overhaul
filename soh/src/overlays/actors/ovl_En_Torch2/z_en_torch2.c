@@ -7,6 +7,7 @@
 #include "z_en_torch2.h"
 #include "objects/object_torch2/object_torch2.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "enemy_overhaul.h"
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -89,6 +90,15 @@ static u8 sStaggerTimer;
 static s8 sLastSwordAnim;
 static u8 sAlpha;
 
+// Miniboss & Enemy Overhaul: Dark Link (there is only ever one, so his extra state is static like the rest)
+static s16 sEoMaxHealth;
+static s16 sEoBoltTimer;
+static s16 sEoBoltCharge;
+static s16 sEoNovaTimer;
+static s16 sEoNovaCharge;
+static s16 sEoEchoTimer;
+static u8 sEoWasDodging;
+
 static DamageTable sDamageTable = {
     /* Deku nut      */ DMG_ENTRY(0, 0x1),
     /* Deku stick    */ DMG_ENTRY(2, 0x0),
@@ -151,7 +161,14 @@ void EnTorch2_Init(Actor* thisx, PlayState* play2) {
     this->shieldQuad.base.atFlags = AT_ON | AT_TYPE_ENEMY;
     this->shieldQuad.base.acFlags = AC_ON | AC_HARD | AC_TYPE_PLAYER;
     this->actor.colChkInfo.damageTable = &sDamageTable;
-    this->actor.colChkInfo.health = gSaveContext.healthCapacity >> 3;
+    this->actor.colChkInfo.health = CLAMP_MAX(EO_DARK_LINK_HP(gSaveContext.healthCapacity >> 3), 255);
+    sEoMaxHealth = this->actor.colChkInfo.health;
+    sEoBoltTimer = 90;
+    sEoBoltCharge = 0;
+    sEoNovaTimer = 240;
+    sEoNovaCharge = 0;
+    sEoEchoTimer = 0;
+    sEoWasDodging = false;
     this->actor.colChkInfo.cylRadius = 60;
     this->actor.colChkInfo.cylHeight = 100;
     play->func_11D54(this, play);
@@ -202,6 +219,11 @@ s32 EnTorch2_SwingSword(PlayState* play, Input* input, Player* this) {
         attackDelay = 15;
         noAttackChance += 0.3f;
     }
+    // Miniboss & Enemy Overhaul: once badly hurt he swings twice as often (still easing off when Link is low)
+    if (EO_DARK_LINK_ON() && (sEoMaxHealth > 0) &&
+        EO_AT_OR_BELOW(this->actor.colChkInfo.health, sEoMaxHealth, 1, 2)) {
+        attackDelay = (attackDelay == 15) ? 7 : 3;
+    }
     if (sAlpha != 255) {
         noAttackChance += 2.0f;
     }
@@ -234,6 +256,119 @@ void EnTorch2_Backflip(Player* this, Input* input, Actor* thisx) {
     input->cur.button = BTN_A;
     this->invincibilityTimer = 10;
     sCounterState = 0;
+}
+
+/**
+ * Miniboss & Enemy Overhaul: Dark Link's new moves.
+ *  - Shadow bolts: when Link keeps his distance, Dark Link stops, gathers darkness in his sword hand and throws it
+ *    (three at once once he's badly hurt). If Link shoots at him, he dodges and answers with a bolt of his own.
+ *  - Dark nova: when Link stays close for long, he plants his feet while darkness rises around him, then a ring of
+ *    it bursts outward along the floor. Any jump, sidehop or backflip clears it.
+ *  - Once badly hurt: he swings twice as often, and bursts out of the water in darkness when he comes back.
+ * He stands still for the whole wind-up of both moves, which is a good moment to hit him.
+ */
+void EnTorch2_EoExtras(Player* this, PlayState* play, Input* input, Actor* attackItem) {
+    s32 enraged;
+    Vec3f pos;
+
+    if (!EO_DARK_LINK_ON() || (sActionState != ENTORCH2_ATTACK) || (sAlpha != 255) || (sSwordJumpState != 0) ||
+        (this->actor.colChkInfo.health == 0) || !Eo_CanAttack(play)) {
+        sEoBoltCharge = sEoNovaCharge = 0;
+        return;
+    }
+
+    enraged = EO_AT_OR_BELOW(this->actor.colChkInfo.health, sEoMaxHealth, 1, 2);
+
+    // The burst of darkness when he comes back from the water
+    if (sEoEchoTimer > 0) {
+        sEoEchoTimer--;
+        if (sEoEchoTimer == 0) {
+            EoShot_Ring(play, &this->actor, EO_LOOK_DARK, &this->actor.world.pos, 240.0f, 10.0f, 0x08);
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_THUNDER);
+        }
+    }
+
+    // Answer a shot with a bolt once he has rolled out of its way
+    if (sDodgeRollState != 0) {
+        sEoWasDodging = true;
+    } else if (sEoWasDodging) {
+        sEoWasDodging = false;
+        if ((sEoBoltCharge == 0) && (this->actor.xzDistToPlayer > 150.0f)) {
+            sEoBoltTimer = MIN(sEoBoltTimer, 6);
+        }
+    }
+
+    // Winding up: hold still
+    if ((sEoBoltCharge > 0) || (sEoNovaCharge > 0)) {
+        input->cur.stick_x = input->cur.stick_y = 0;
+        input->cur.button &= ~(BTN_A | BTN_B);
+        this->actor.shape.rot.y = this->actor.world.rot.y = this->actor.yawTowardsPlayer;
+    }
+
+    if (sEoBoltCharge > 0) {
+        pos = this->leftHandPos;
+        if (pos.y < this->actor.world.pos.y) {
+            pos = this->actor.world.pos;
+            pos.y += 40.0f;
+        }
+        if ((sEoBoltCharge % 3) == 0) {
+            Eo_DarkPuff(play, &pos, 0.4f);
+        }
+        sEoBoltCharge--;
+        if (sEoBoltCharge == 0) {
+            if (enraged) {
+                EoShot_OrbFan(play, &this->actor, EO_KIND_DARK, &pos, 13.0f, 3, 0x1400);
+            } else {
+                EoShot_SetHoming(EoShot_OrbAimed(play, &this->actor, EO_KIND_DARK, &pos, 13.0f, 0), 0x100);
+            }
+            Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_SWING_HARD);
+            sEoBoltTimer = enraged ? (50 + (s16)Rand_ZeroFloat(30.0f)) : (80 + (s16)Rand_ZeroFloat(40.0f));
+        }
+        return;
+    }
+
+    if (sEoNovaCharge > 0) {
+        if ((sEoNovaCharge % 2) == 0) {
+            pos = this->actor.world.pos;
+            pos.x += Rand_CenteredFloat(60.0f);
+            pos.z += Rand_CenteredFloat(60.0f);
+            Eo_DarkPuff(play, &pos, 0.6f);
+        }
+        sEoNovaCharge--;
+        if (sEoNovaCharge == 0) {
+            EoShot_Ring(play, &this->actor, EO_LOOK_DARK, &this->actor.world.pos, 320.0f, 11.0f, 0x10);
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_THUNDER);
+            sEoNovaTimer = enraged ? (220 + (s16)Rand_ZeroFloat(80.0f)) : (320 + (s16)Rand_ZeroFloat(100.0f));
+        }
+        return;
+    }
+
+    if ((this->meleeWeaponState != 0) || (sCounterState != 0) || (sDodgeRollState != 0) || (attackItem != NULL) ||
+        !(this->actor.bgCheckFlags & 1)) {
+        return;
+    }
+
+    // Shadow bolts at range
+    if (this->actor.xzDistToPlayer > 220.0f) {
+        if (sEoBoltTimer > 0) {
+            sEoBoltTimer--;
+        } else {
+            sEoBoltCharge = 18;
+            Audio_PlayActorSound2(&this->actor, NA_SE_EV_FANTOM_WARP_S);
+        }
+    } else if (sEoBoltTimer < 20) {
+        sEoBoltTimer = 20;
+    }
+
+    // Dark nova up close
+    if (this->actor.xzDistToPlayer < 150.0f) {
+        if (sEoNovaTimer > 0) {
+            sEoNovaTimer--;
+        } else {
+            sEoNovaCharge = 22;
+            Audio_PlayActorSound2(&this->actor, NA_SE_EV_FANTOM_WARP_L);
+        }
+    }
 }
 
 void EnTorch2_Update(Actor* thisx, PlayState* play2) {
@@ -553,6 +688,11 @@ void EnTorch2_Update(Actor* thisx, PlayState* play2) {
                 Math_Vec3f_Copy(&this->actor.home.pos, &this->actor.world.pos);
                 play->func_11D54(this, play);
                 sActionState = ENTORCH2_ATTACK;
+                // Miniboss & Enemy Overhaul: once badly hurt he rises from the water in a burst of darkness
+                if (EO_DARK_LINK_ON() && EO_AT_OR_BELOW(this->actor.colChkInfo.health, sEoMaxHealth, 1, 2)) {
+                    sEoEchoTimer = 12;
+                    Eo_DarkPuff(play, &this->actor.world.pos, 1.5f);
+                }
                 sStickTilt = 0.0f;
                 if (sAlpha != 255) {
                     sStaggerCount = 0;
@@ -572,6 +712,8 @@ void EnTorch2_Update(Actor* thisx, PlayState* play2) {
             this->actor.shape.shadowAlpha -= 13;
             break;
     }
+
+    EnTorch2_EoExtras(this, play, input, attackItem);
 
     // Causes Dark Link to shield in place when Link is using magic attacks other than the spin attack
 

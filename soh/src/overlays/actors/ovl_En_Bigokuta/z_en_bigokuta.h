@@ -22,6 +22,9 @@ typedef struct EnBigokuta {
     /* 0x028C */ ColliderJntSph collider;
     /* 0x02AC */ ColliderJntSphElement element;
     /* 0x02EC */ ColliderCylinder cylinder[2];
-} EnBigokuta; // size = 0x0384
+    // Miniboss & Enemy Overhaul
+    s16 eoSpitTimer;
+    s16 eoMaxHealth;
+} EnBigokuta;
 
 #endif

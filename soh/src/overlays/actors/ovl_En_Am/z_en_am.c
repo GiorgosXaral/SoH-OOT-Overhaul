@@ -9,6 +9,7 @@
 #include "overlays/actors/ovl_En_Bom/z_en_bom.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/ResourceManagerHelpers.h"
+#include "enemy_overhaul.h"
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -627,6 +628,14 @@ void EnAm_Lunge(EnAm* this, PlayState* play) {
 
                 if (this->dyna.actor.bgCheckFlags & 2) {
                     this->unk_258--;
+
+                    // Miniboss & Enemy Overhaul: the last hop of a lunge lands hard enough to send out a shockwave
+                    if (EO_ENEMIES_ON() && (this->unk_258 == 0) && (this->deathTimer == 0)) {
+                        Vec3f ringPos = this->dyna.actor.world.pos;
+
+                        ringPos.y = this->dyna.actor.floorHeight;
+                        EoShot_Ring(play, &this->dyna.actor, EO_LOOK_DUST, &ringPos, 120.0f, 5.0f, 0x08);
+                    }
                 }
 
                 this->dyna.actor.velocity.y = 0.0f;

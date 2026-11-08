@@ -100,7 +100,10 @@ typedef struct EnTest {
     /* 0x810 */ ColliderCylinder bodyCollider;
     /* 0x85C */ ColliderQuad swordCollider;
     /* 0x8DC */ ColliderCylinder shieldCollider;
-} EnTest; // size = 0x928
+    // Miniboss & Enemy Overhaul
+    u8 eoWaveDone;
+    s16 eoBashCooldown;
+} EnTest;
 
 typedef enum {
     /* 0 */ STALFOS_TYPE_INVISIBLE,

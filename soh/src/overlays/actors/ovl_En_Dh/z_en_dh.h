@@ -30,7 +30,11 @@ typedef struct EnDh {
     /* 0x0318 */ f32 dirtWaveSpread;
     /* 0x031C */ f32 dirtWaveHeight;
     /* 0x0320 */ f32 dirtWaveAlpha;
-} EnDh; // size = 0x0324
+    // Miniboss & Enemy Overhaul
+    s16 eoMaxHealth;
+    s16 eoSpitTimer;
+    s16 eoSpitCharge;
+} EnDh;
 
 typedef enum {
     ENDH_HANDS_KILLED_4 = -4,

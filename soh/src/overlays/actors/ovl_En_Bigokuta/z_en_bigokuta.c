@@ -2,6 +2,7 @@
 #include "objects/object_bigokuta/object_bigokuta.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/ResourceManagerHelpers.h"
+#include "enemy_overhaul.h"
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -178,6 +179,9 @@ void EnBigokuta_Init(Actor* thisx, PlayState* play) {
     }
 
     CollisionCheck_SetInfo(&this->actor.colChkInfo, &sDamageTable, sColChkInfoInit);
+    this->actor.colChkInfo.health = EO_HP2(this->actor.colChkInfo.health);
+    this->eoMaxHealth = this->actor.colChkInfo.health;
+    this->eoSpitTimer = 120;
 
     this->unk_194 = 1;
 
@@ -532,6 +536,27 @@ void func_809BDC08(EnBigokuta* this, PlayState* play) {
     this->actor.shape.rot.y += phi_v1 * this->unk_194;
     func_809BCE3C(this);
     func_809BCF68(this, play);
+
+    // Miniboss & Enemy Overhaul: as it circles, it spits jets of water at Link (three at once when badly hurt)
+    if (EO_MB_ATTACKS_ON() && Eo_CanAttack(play)) {
+        if (this->eoSpitTimer > 0) {
+            this->eoSpitTimer--;
+        } else if ((this->actor.xzDistToPlayer > 150.0f) && Actor_IsFacingPlayer(&this->actor, 0x2800)) {
+            Vec3f mouth = this->actor.world.pos;
+
+            mouth.y += 70.0f;
+            mouth.x += Math_SinS(this->actor.shape.rot.y) * 60.0f;
+            mouth.z += Math_CosS(this->actor.shape.rot.y) * 60.0f;
+            if (EO_AT_OR_BELOW(this->actor.colChkInfo.health, this->eoMaxHealth, 1, 2)) {
+                EoShot_OrbFan(play, &this->actor, EO_KIND_WATER, &mouth, 12.0f, 3, 0x1400);
+            } else {
+                EoShot_OrbAimed(play, &this->actor, EO_KIND_WATER, &mouth, 12.0f, 0);
+            }
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_OCTAROCK_FLOAT);
+            this->eoSpitTimer = 100 + (s16)Rand_ZeroFloat(60.0f);
+        }
+    }
+
     if (this->unk_198 == 0) {
         func_809BD768(this);
     } else if (this->unk_196 == 0) {
@@ -559,6 +584,10 @@ void func_809BDF34(EnBigokuta* this, PlayState* play) {
     this->actor.world.pos.y = (sinf(this->unk_196 * (M_PI / 16)) * 100.0f) + this->actor.home.pos.y;
     if (this->unk_196 == 0) {
         func_809BD1C8(this, play);
+        // Miniboss & Enemy Overhaul: its belly-flop sends a wave outward (jump it)
+        if (EO_MB_ATTACKS_ON() && Eo_CanAttack(play)) {
+            EoShot_Ring(play, &this->actor, EO_LOOK_WATER, &this->actor.world.pos, 320.0f, 10.0f, 0x08);
+        }
         func_809BD3F8(this);
     }
 }

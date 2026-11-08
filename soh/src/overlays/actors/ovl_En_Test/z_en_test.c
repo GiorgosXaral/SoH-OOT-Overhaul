@@ -8,6 +8,7 @@
 #include "objects/object_sk2/object_sk2.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/ResourceManagerHelpers.h"
+#include "enemy_overhaul.h"
 
 #define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
@@ -283,7 +284,7 @@ void EnTest_Init(Actor* thisx, PlayState* play) {
     Collider_SetQuad(play, &this->swordCollider, &this->actor, &sSwordColliderInit);
 
     this->actor.colChkInfo.mass = MASS_HEAVY;
-    this->actor.colChkInfo.health = 10;
+    this->actor.colChkInfo.health = EO_HP2(10);
 
     slashBlure.p1StartColor[0] = slashBlure.p1StartColor[1] = slashBlure.p1StartColor[2] = slashBlure.p1StartColor[3] =
         slashBlure.p2StartColor[0] = slashBlure.p2StartColor[1] = slashBlure.p2StartColor[2] =
@@ -904,6 +905,7 @@ void EnTest_SetupSlashDown(EnTest* this) {
     this->actor.speedXZ = 0.0f;
     EnTest_SetupAction(this, EnTest_SlashDown);
     this->swordCollider.info.toucher.damage = 16;
+    this->eoWaveDone = false;
 
     if (this->unk_7DE != 0) {
         this->unk_7DE = 3;
@@ -925,6 +927,18 @@ void EnTest_SlashDown(EnTest* this, PlayState* play) {
         this->meleeWeaponState = 1;
     } else {
         this->meleeWeaponState = 0;
+    }
+
+    // Miniboss & Enemy Overhaul: the chop splits the floor towards Link
+    if (!this->eoWaveDone && (this->skelAnime.curFrame >= 10.0f)) {
+        this->eoWaveDone = true;
+        if (EO_MB_ATTACKS_ON() && Eo_CanAttack(play) && (this->actor.bgCheckFlags & 1)) {
+            Vec3f pos = this->actor.world.pos;
+
+            pos.x += Math_SinS(this->actor.shape.rot.y) * 50.0f;
+            pos.z += Math_CosS(this->actor.shape.rot.y) * 50.0f;
+            EoShot_GroundWave(play, &this->actor, EO_LOOK_DUST, &pos, this->actor.shape.rot.y, 10.0f, 40, 0x10);
+        }
     }
 
     if (SkelAnime_Update(&this->skelAnime)) {
@@ -1117,6 +1131,10 @@ void EnTest_Jumpslash(EnTest* this, PlayState* play) {
     if (this->actor.world.pos.y <= this->actor.floorHeight) {
         if (this->actor.speedXZ != 0.0f) {
             Audio_PlayActorSound2(&this->actor, NA_SE_EN_DODO_M_GND);
+            // Miniboss & Enemy Overhaul: the landing sends a shockwave along the floor (jump it)
+            if (EO_MB_ATTACKS_ON() && Eo_CanAttack(play)) {
+                EoShot_Ring(play, &this->actor, EO_LOOK_DUST, &this->actor.world.pos, 240.0f, 10.0f, 0x10);
+            }
         }
 
         this->actor.world.pos.y = this->actor.floorHeight;
@@ -1510,7 +1528,7 @@ void func_80862E6C(EnTest* this, PlayState* play) {
         }
     } else {
         if (this->actor.home.rot.x == 0) {
-            this->actor.colChkInfo.health = 10;
+            this->actor.colChkInfo.health = EO_HP2(10);
 
             if (this->actor.params == STALFOS_TYPE_4) {
                 this->actor.params = -1;
@@ -1663,6 +1681,14 @@ void EnTest_UpdateDamage(EnTest* this, PlayState* play) {
         if (this->unk_7C8 >= 0xA) {
             this->actor.speedXZ = -4.0f;
         }
+
+        // Miniboss & Enemy Overhaul: hacking at his shield sometimes gets Link shoved back by it
+        if (EO_MB_ATTACKS_ON() && (this->eoBashCooldown == 0) && (this->actor.xzDistToPlayer < 100.0f) &&
+            (Rand_ZeroOne() < 0.4f) && Eo_CanAttack(play) && (player->invincibilityTimer == 0)) {
+            func_8002F7A0(play, &this->actor, 7.0f, this->actor.yawTowardsPlayer, 4.0f);
+            Audio_PlayActorSound2(&this->actor, NA_SE_IT_SHIELD_BOUND);
+            this->eoBashCooldown = 60;
+        }
     } else if (this->bodyCollider.base.acFlags & AC_HIT) {
         this->bodyCollider.base.acFlags &= ~AC_HIT;
 
@@ -1709,6 +1735,9 @@ void EnTest_Update(Actor* thisx, PlayState* play) {
     u32 floorProperty;
     s32 pad;
 
+    if (this->eoBashCooldown > 0) {
+        this->eoBashCooldown--;
+    }
     EnTest_UpdateDamage(this, play);
 
     if (this->actor.colChkInfo.damageEffect != STALFOS_DMGEFF_FIREMAGIC) {

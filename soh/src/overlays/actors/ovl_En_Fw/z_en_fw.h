@@ -44,6 +44,8 @@ typedef struct EnFw {
     /* 0x021C */ Vec3s jointTable[11];
     /* 0x025E */ Vec3s morphTable[11];
     /* 0x02A0 */ EnFwEffect effects[20];
-} EnFw; // size = 0x0700
+    // Miniboss & Enemy Overhaul
+    s16 eoOrbTimer;
+} EnFw;
 
 #endif

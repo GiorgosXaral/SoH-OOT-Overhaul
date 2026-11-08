@@ -30,7 +30,9 @@ typedef struct EnPoSisters {
     /* 0x02AC */ ColliderCylinder collider;
     /* 0x02F8 */ MtxF unk_2F8;
     u32 epoch;
-} EnPoSisters; // size = 0x0338
+    // Miniboss & Enemy Overhaul
+    s16 eoShotTimer;
+} EnPoSisters;
 
 void func_80ADB338(EnPoSisters* enPoSisters, PlayState* play);
 

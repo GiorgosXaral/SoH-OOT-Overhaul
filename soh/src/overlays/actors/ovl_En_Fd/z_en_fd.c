@@ -10,6 +10,7 @@
 #include "soh/frame_interpolation.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/ResourceManagerHelpers.h"
+#include "enemy_overhaul.h"
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -227,7 +228,8 @@ s32 EnFd_SpawnCore(EnFd* this, PlayState* play) {
     this->actor.child->colChkInfo.health = this->actor.colChkInfo.health % 8;
 
     if (this->actor.child->colChkInfo.health == 0) {
-        this->actor.child->colChkInfo.health = 8;
+        // Miniboss & Enemy Overhaul: the exposed core takes twice the hits (the number of rounds stays the same)
+        this->actor.child->colChkInfo.health = EO_HP2(8);
     }
 
     if (CHECK_FLAG_ALL(this->actor.flags, ACTOR_FLAG_HOOKSHOT_ATTACHED)) {
@@ -509,6 +511,10 @@ void EnFd_SpinAndGrow(EnFd* this, PlayState* play) {
 
 void EnFd_JumpToGround(EnFd* this, PlayState* play) {
     if ((this->actor.bgCheckFlags & 1) && !(this->actor.velocity.y > 0.0f)) {
+        // Miniboss & Enemy Overhaul: every landing throws off a ring of fire (jump it)
+        if (EO_MB_ATTACKS_ON() && Eo_CanAttack(play) && (this->invincibilityTimer == 0)) {
+            EoShot_Ring(play, &this->actor, EO_LOOK_FIRE, &this->actor.world.pos, 260.0f, 10.0f, 0x10);
+        }
         this->actor.velocity.y = 0.0f;
         this->actor.speedXZ = 0.0f;
         this->actor.world.rot.y = this->actor.shape.rot.y;
@@ -633,6 +639,30 @@ void EnFd_Run(EnFd* this, PlayState* play) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_FLAME_KICK);
     }
     Math_SmoothStepToF(&this->actor.speedXZ, 8.0f, 0.1f, 1.0f, 0.0f);
+
+    // Miniboss & Enemy Overhaul: it throws fireballs as it dances around Link, and its steps leave burning
+    // footprints behind for a moment
+    if (EO_MB_ATTACKS_ON() && Eo_CanAttack(play) && (this->invincibilityTimer == 0)) {
+        if (this->eoOrbTimer > 0) {
+            this->eoOrbTimer--;
+        } else if (this->actor.xzDistToPlayer > 150.0f) {
+            Vec3f pos = this->actor.world.pos;
+
+            pos.y += 40.0f;
+            EoShot_OrbFan(play, &this->actor, EO_KIND_FIRE, &pos, 11.0f, 3, 0x1400);
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_FLAME_LAUGH);
+            this->eoOrbTimer = 90 + (s16)Rand_ZeroFloat(40.0f);
+        }
+
+        if (++this->eoTrailTimer >= 6) {
+            Vec3f pos = this->actor.world.pos;
+            Vec3f vel = { 0.0f, 0.0f, 0.0f };
+
+            this->eoTrailTimer = 0;
+            pos.y = this->actor.floorHeight + 12.0f;
+            EoShot_Orb(play, &this->actor, EO_KIND_EMBER, &pos, &vel);
+        }
+    }
 }
 
 /**

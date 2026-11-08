@@ -49,6 +49,9 @@ typedef struct EnFd {
     /* 0x04DC */ Vec3s jointTable[27];
     /* 0x057E */ Vec3s morphTable[27];
     /* 0x0620 */ EnFdEffect effects[200];
-} EnFd; // size = 0x31E0
+    // Miniboss & Enemy Overhaul
+    s16 eoOrbTimer;
+    s16 eoTrailTimer;
+} EnFd;
 
 #endif

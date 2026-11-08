@@ -9,6 +9,7 @@
 #include "soh/Enhancements/randomizer/randomizer_entrance.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/ResourceManagerHelpers.h"
+#include "enemy_overhaul.h"
 
 #define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
@@ -228,7 +229,7 @@ void EnGeldB_Init(Actor* thisx, PlayState* play) {
     thisx->colChkInfo.damageTable = &sDamageTable;
     ActorShape_Init(&thisx->shape, 0.0f, ActorShadow_DrawFeet, 0.0f);
     this->actor.colChkInfo.mass = MASS_HEAVY;
-    thisx->colChkInfo.health = 20;
+    thisx->colChkInfo.health = EO_HP2(20);
     thisx->colChkInfo.cylRadius = 50;
     thisx->colChkInfo.cylHeight = 100;
     thisx->naviEnemyId = 0x54;
@@ -942,6 +943,11 @@ void EnGeldB_SpinAttack(EnGeldB* this, PlayState* play) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_GERUDOFT_ATTACK);
     } else if ((s32)this->skelAnime.curFrame == 21) {
         this->actor.speedXZ = 0.0f;
+        // Miniboss & Enemy Overhaul: the spin ends in a sweep of dust along the floor (jump it)
+        if (EO_MB_ATTACKS_ON() && (this->spinAttackState < 2) && Eo_CanAttack(play) &&
+            (this->skelAnime.curFrame - this->skelAnime.playSpeed < 21.0f)) {
+            EoShot_Ring(play, &this->actor, EO_LOOK_DUST, &this->actor.world.pos, 190.0f, 10.0f, 0x08);
+        }
     } else if ((s32)this->skelAnime.curFrame == 24) {
         this->meleeWeaponState = -1;
     }
@@ -1055,6 +1061,31 @@ void EnGeldB_SetupDamaged(EnGeldB* this) {
     EnGeldB_SetupAction(this, EnGeldB_Damaged);
 }
 
+/**
+ * Miniboss & Enemy Overhaul: once badly hurt, a Gerudo sometimes answers a hit by vanishing in a puff of smoke and
+ * striking from behind Link.
+ */
+s32 EnGeldB_EoFlashStep(EnGeldB* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    Vec3f pos;
+
+    if (!EO_MB_ATTACKS_ON() || (this->eoFlashCooldown > 0) || !Eo_CanAttack(play) ||
+        !EO_AT_OR_BELOW(this->actor.colChkInfo.health, EO_HP2(20), 1, 2) || (Rand_ZeroOne() >= 0.5f) ||
+        !Eo_PosBehindPlayer(play, 70.0f, &pos)) {
+        return false;
+    }
+
+    Eo_Puff(play, &this->actor.world.pos, 1.5f);
+    this->actor.world.pos = pos;
+    this->actor.prevPos = pos;
+    this->actor.speedXZ = 0.0f;
+    this->actor.world.rot.y = this->actor.shape.rot.y = Math_Vec3f_Yaw(&pos, &player->actor.world.pos);
+    Eo_Puff(play, &pos, 1.5f);
+    this->eoFlashCooldown = 120;
+    EnGeldB_SetupSlash(this);
+    return true;
+}
+
 void EnGeldB_Damaged(EnGeldB* this, PlayState* play) {
     s16 angleToWall;
 
@@ -1070,6 +1101,9 @@ void EnGeldB_Damaged(EnGeldB* this, PlayState* play) {
     Math_SmoothStepToS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 1, 0x1194, 0);
     if (!EnGeldB_DodgeRanged(play, this) && !EnGeldB_ReactToPlayer(play, this, 0) &&
         SkelAnime_Update(&this->skelAnime) && (this->actor.bgCheckFlags & 1)) {
+        if (EnGeldB_EoFlashStep(this, play)) {
+            return;
+        }
         angleToWall = this->actor.wallYaw - this->actor.shape.rot.y;
         if ((this->actor.bgCheckFlags & 8) && (ABS(angleToWall) < 0x2EE0) && (this->actor.xzDistToPlayer < 90.0f)) {
             EnGeldB_SetupJump(this);
@@ -1110,6 +1144,10 @@ void EnGeldB_Jump(EnGeldB* this, PlayState* play) {
         this->actor.speedXZ = 0.0f;
         this->actor.velocity.y = 0.0f;
         this->actor.world.pos.y = this->actor.floorHeight;
+        // Miniboss & Enemy Overhaul: she lands with a shockwave (jump it)
+        if (EO_MB_ATTACKS_ON() && Eo_CanAttack(play)) {
+            EoShot_Ring(play, &this->actor, EO_LOOK_DUST, &this->actor.world.pos, 200.0f, 10.0f, 0x08);
+        }
         if (!Actor_OtherIsTargeted(play, &this->actor)) {
             EnGeldB_SetupSlash(this);
         } else {
@@ -1407,6 +1445,9 @@ void EnGeldB_Update(Actor* thisx, PlayState* play) {
     s32 pad;
     EnGeldB* this = (EnGeldB*)thisx;
 
+    if (this->eoFlashCooldown > 0) {
+        this->eoFlashCooldown--;
+    }
     EnGeldB_CollisionCheck(this, play);
     if (this->actor.colChkInfo.damageEffect != GELDB_DMG_UNK_6) {
         Actor_MoveXZGravity(&this->actor);

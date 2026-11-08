@@ -32,6 +32,10 @@ typedef struct EnRd {
     /* 0x031C */ u8 unk_31C;
     /* 0x031D */ u8 unk_31D;
     /* 0x0320 */ ColliderCylinder collider;
-} EnRd; // size = 0x036C
+    // Miniboss & Enemy Overhaul
+    s16 eoRallyTimer;
+    s16 eoLungeTimer;
+    s16 eoLungeCooldown;
+} EnRd;
 
 #endif

@@ -2,6 +2,11 @@
 #include "objects/object_rd/object_rd.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/ResourceManagerHelpers.h"
+#include "enemy_overhaul.h"
+
+// Miniboss & Enemy Overhaul
+#define EO_RD_IS_GIBDO(this) ((this)->actor.params <= -2)
+#define EO_RD_LEASH(this) (((this)->eoRallyTimer > 0) ? 450.0f : 150.0f)
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -15,6 +20,7 @@ void EnRd_Draw(Actor* thisx, PlayState* play);
 void func_80AE269C(EnRd* this);
 void func_80AE2744(EnRd* this, PlayState* play);
 void func_80AE2970(EnRd* this);
+void func_80AE2B90(EnRd* this, PlayState* play);
 void func_80AE2A10(EnRd* this, PlayState* play);
 void func_80AE2C1C(EnRd* this, PlayState* play);
 void func_80AE2F50(EnRd* this, PlayState* play);
@@ -215,6 +221,30 @@ void func_80AE269C(EnRd* this) {
     EnRd_SetupAction(this, func_80AE2744);
 }
 
+/**
+ * Miniboss & Enemy Overhaul: a ReDead's scream wakes the dead around it. Every idle ReDead or Gibdo within earshot
+ * shambles towards Link for a while, following him further from its post than usual.
+ */
+void EnRd_EoRally(EnRd* this, PlayState* play) {
+    Actor* other;
+
+    if (!EO_ENEMIES_ON()) {
+        return;
+    }
+    for (other = play->actorCtx.actorLists[ACTORCAT_ENEMY].head; other != NULL; other = other->next) {
+        EnRd* rd = (EnRd*)other;
+
+        if ((other->id != ACTOR_EN_RD) || (other == &this->actor) || (other->update == NULL) ||
+            (other->colChkInfo.health == 0) || (Actor_WorldDistXYZToActor(&this->actor, other) > 500.0f)) {
+            continue;
+        }
+        rd->eoRallyTimer = 240;
+        if ((rd->actionFunc == func_80AE2744) && (other->params != 2)) {
+            func_80AE2B90(rd, play);
+        }
+    }
+}
+
 void func_80AE2744(EnRd* this, PlayState* play) {
     SkelAnime_Update(&this->skelAnime);
     Math_SmoothStepToS(&this->unk_30E, 0, 1, 0x64, 0);
@@ -333,8 +363,23 @@ void func_80AE2C1C(EnRd* this, PlayState* play) {
     this->actor.world.rot.y = this->actor.shape.rot.y;
     SkelAnime_Update(&this->skelAnime);
 
-    if (Actor_WorldDistXYZToPoint(&player->actor, &this->actor.home.pos) >= 150.0f) {
+    if (Actor_WorldDistXYZToPoint(&player->actor, &this->actor.home.pos) >= EO_RD_LEASH(this)) {
         func_80AE2F50(this, play);
+    }
+
+    // Miniboss & Enemy Overhaul: a Gibdo lurches forward in a sudden lunge
+    if (EO_ENEMIES_ON() && EO_RD_IS_GIBDO(this)) {
+        if (this->eoLungeTimer > 0) {
+            this->eoLungeTimer--;
+            this->actor.speedXZ = (this->eoLungeTimer > 0) ? 4.5f : 0.4f;
+        } else if (this->eoLungeCooldown > 0) {
+            this->eoLungeCooldown--;
+        } else if ((this->actor.xzDistToPlayer > 60.0f) && (this->actor.xzDistToPlayer < 140.0f) &&
+                   Actor_IsFacingPlayer(&this->actor, 0x1000)) {
+            this->eoLungeTimer = 12;
+            this->eoLungeCooldown = 100;
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_REDEAD_AIM);
+        }
     }
 
     if ((ABS(sp32) < 0x1554) && (Actor_WorldDistXYZToActor(&this->actor, &player->actor) <= 150.0f)) {
@@ -345,6 +390,7 @@ void func_80AE2C1C(EnRd* this, PlayState* play) {
             if (this->unk_306 == 0) {
                 if (!(this->unk_312 & PLAYER_STATE2_GRABBED_BY_ENEMY) &&
                     GameInteractor_Should(VB_REDEAD_GIBDO_FREEZE_LINK, true, this)) {
+                    EnRd_EoRally(this, play);
                     player->actor.freezeTimer = 40;
                     Player_SetAutoLockOnActor(play, &this->actor);
                     GET_PLAYER(play)->autoLockOnActor = &this->actor;
@@ -417,7 +463,7 @@ void func_80AE2FD0(EnRd* this, PlayState* play) {
     if (!(player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_HANGING_OFF_LEDGE | PLAYER_STATE1_CLIMBING_LEDGE |
                                  PLAYER_STATE1_JUMPING | PLAYER_STATE1_FREEFALL | PLAYER_STATE1_CLIMBING_LADDER)) &&
         !(player->stateFlags2 & PLAYER_STATE2_GRABBED_BY_ENEMY) &&
-        (Actor_WorldDistXYZToPoint(&player->actor, &this->actor.home.pos) < 150.0f)) {
+        (Actor_WorldDistXYZToPoint(&player->actor, &this->actor.home.pos) < EO_RD_LEASH(this))) {
         this->actor.targetMode = 0;
         func_80AE2B90(this, play);
     } else if (this->actor.params > 0) {
@@ -816,6 +862,9 @@ void EnRd_Update(Actor* thisx, PlayState* play) {
     Player* player = GET_PLAYER(play);
     s32 pad2;
 
+    if (this->eoRallyTimer > 0) {
+        this->eoRallyTimer--;
+    }
     func_80AE4114(this, play);
 
     if (gSaveContext.sunsSongState != SUNSSONG_INACTIVE && this->unk_318 == 0) {

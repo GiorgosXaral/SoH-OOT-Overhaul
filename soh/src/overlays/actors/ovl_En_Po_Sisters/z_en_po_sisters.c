@@ -10,6 +10,7 @@
 #include "soh/frame_interpolation.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/ResourceManagerHelpers.h"
+#include "enemy_overhaul.h"
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -200,6 +201,8 @@ void EnPoSisters_Init(Actor* thisx, PlayState* play) {
     Collider_InitCylinder(play, &this->collider);
     Collider_SetCylinder(play, &this->collider, &this->actor, &sCylinderInit);
     CollisionCheck_SetInfo(&this->actor.colChkInfo, &sDamageTable, &sColChkInfoInit);
+    this->actor.colChkInfo.health = EO_HP2(this->actor.colChkInfo.health);
+    this->eoShotTimer = 90;
     this->unk_194 = (thisx->params >> 8) & 3;
     this->actor.naviEnemyId = this->unk_194 + 0x50;
     this->unk_195 = (thisx->params >> 0xA) & 3;
@@ -1181,6 +1184,42 @@ void func_80ADC10C(EnPoSisters* this, PlayState* play) {
     }
 }
 
+/**
+ * Miniboss & Enemy Overhaul: while a sister closes in, she throws a ball of her own color at Link: Meg darkness,
+ * Joelle fire, Beth ice and Amy lightning. Joelle's spin also scatters embers. Meg's copies never shoot.
+ */
+void EnPoSisters_EoExtras(EnPoSisters* this, PlayState* play) {
+    static s32 sKinds[4] = { EO_KIND_DARK, EO_KIND_FIRE, EO_KIND_ICE, EO_KIND_SHOCK };
+    Vec3f pos;
+
+    if (!EO_MB_ATTACKS_ON() || (this->unk_195 != 0) || (this->unk_22E.a != 255) ||
+        (this->actor.colChkInfo.health == 0) || !Eo_CanAttack(play)) {
+        return;
+    }
+
+    pos = this->actor.world.pos;
+    pos.y += 45.0f;
+
+    if ((this->actionFunc == func_80ADA8C0) && (this->unk_194 == 1) && ((play->gameplayFrames % 5) == 0)) {
+        Vec3f vel = { 0.0f, 0.0f, 0.0f };
+
+        vel.x = Rand_CenteredFloat(4.0f);
+        vel.z = Rand_CenteredFloat(4.0f);
+        EoShot_Orb(play, &this->actor, EO_KIND_EMBER, &pos, &vel);
+    }
+
+    if ((this->actionFunc != func_80ADA6A0) && (this->actionFunc != func_80ADA530)) {
+        return;
+    }
+    if (this->eoShotTimer > 0) {
+        this->eoShotTimer--;
+    } else if (this->actor.xzDistToPlayer > 170.0f) {
+        EoShot_OrbAimed(play, &this->actor, sKinds[this->unk_194 & 3], &pos, 9.0f, 0);
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_PO_LAUGH2);
+        this->eoShotTimer = 100 + (s16)Rand_ZeroFloat(50.0f);
+    }
+}
+
 void EnPoSisters_Update(Actor* thisx, PlayState* play) {
     s32 pad;
     EnPoSisters* this = (EnPoSisters*)thisx;
@@ -1195,6 +1234,7 @@ void EnPoSisters_Update(Actor* thisx, PlayState* play) {
         func_80ADC034(this, play);
     }
     this->actionFunc(this, play);
+    EnPoSisters_EoExtras(this, play);
     if (this->unk_199 & 0x1F) {
         if (this->unk_199 & 8) {
             func_80ADA35C(this, play);

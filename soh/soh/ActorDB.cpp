@@ -612,8 +612,25 @@ static ActorDBInit EnPartnerInit = {
 };
 extern "C" s16 gEnPartnerId;
 
+// Miniboss & Enemy Overhaul: projectiles, ground waves, shockwave rings, thrown weapons and falling rocks
+#include "src/overlays/actors/ovl_En_Eo_Shot/z_en_eo_shot.h"
+static ActorDBInit EnEoShotInit = {
+    "En_Eo_Shot",
+    "Enemy Overhaul Shot",
+    ACTORCAT_MISC,
+    (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED),
+    OBJECT_GAMEPLAY_KEEP,
+    sizeof(EnEoShot),
+    (ActorFunc)EnEoShot_Init,
+    (ActorFunc)EnEoShot_Destroy,
+    (ActorFunc)EnEoShot_Update,
+    (ActorFunc)EnEoShot_Draw,
+    nullptr,
+};
+
 void ActorDB::AddBuiltInCustomActors() {
     gEnPartnerId = ActorDB::Instance->AddEntry(EnPartnerInit).entry.id;
+    gEnEoShotId = ActorDB::Instance->AddEntry(EnEoShotInit).entry.id;
 }
 
 extern "C" ActorDBEntry* ActorDB_Retrieve(const int id) {

@@ -8,6 +8,11 @@
 #include "objects/object_zf/object_zf.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/ResourceManagerHelpers.h"
+#include "enemy_overhaul.h"
+
+// Miniboss & Enemy Overhaul: the Dodongo's Cavern pair are minibosses, the rest follow the regular enemy toggle
+#define EO_ZF_IS_MINIBOSS(this) ((this)->actor.params >= ENZF_TYPE_LIZALFOS_MINIBOSS_A)
+#define EO_ZF_EXTRAS_ON(this) (EO_ZF_IS_MINIBOSS(this) ? EO_MB_ATTACKS_ON() : EO_ENEMIES_ON())
 
 #define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
@@ -327,7 +332,7 @@ void EnZf_Init(Actor* thisx, PlayState* play) {
         SkelAnime_Init(play, &this->skelAnime, &gZfDinolfosSkel, &gZfCryingAnim, this->jointTable, this->morphTable,
                        ENZF_LIMB_MAX);
     } else { // Lizalfos
-        thisx->colChkInfo.health = 6;
+        thisx->colChkInfo.health = (thisx->params >= ENZF_TYPE_LIZALFOS_MINIBOSS_A) ? EO_HP2(6) : 6;
         thisx->naviEnemyId = 0x0F;
         SkelAnime_Init(play, &this->skelAnime, &gZfLizalfosSkel, &gZfCryingAnim, this->jointTable, this->morphTable,
                        ENZF_LIMB_MAX);
@@ -926,6 +931,7 @@ void EnZf_SetupJumpForward(EnZf* this) {
     }
 
     this->action = ENZF_ACTION_JUMP_FORWARD;
+    this->eoLanded = false;
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_RIZA_JUMP);
     EnZf_SetupAction(this, EnZf_JumpForward);
 }
@@ -936,6 +942,13 @@ void EnZf_JumpForward(EnZf* this, PlayState* play) {
         this->hopAnimIndex = 0;
         this->actor.velocity.y = 0.0f;
         this->actor.speedXZ = 0.0f;
+        // Miniboss & Enemy Overhaul: the leap lands with a shockwave (jump it)
+        if (!this->eoLanded) {
+            this->eoLanded = true;
+            if (EO_ZF_EXTRAS_ON(this) && Eo_CanAttack(play)) {
+                EoShot_Ring(play, &this->actor, EO_LOOK_DUST, &this->actor.world.pos, 220.0f, 10.0f, 0x08);
+            }
+        }
     }
 
     if (SkelAnime_Update(&this->skelAnime)) {
@@ -1168,6 +1181,7 @@ void EnZf_SetupSlash(EnZf* this) {
 
     this->swordCollider.base.atFlags &= ~AT_BOUNCED;
     this->action = ENZF_ACTION_SLASH;
+    this->eoWaveDone = false;
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_RIZA_CRY);
     this->actor.speedXZ = 0.0f;
     EnZf_SetupAction(this, EnZf_Slash);
@@ -1182,6 +1196,18 @@ void EnZf_Slash(EnZf* this, PlayState* play) {
 
     if ((s32)this->skelAnime.curFrame == 10) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_RIZA_ATTACK);
+    }
+
+    // Miniboss & Enemy Overhaul: the miniboss pair's slashes carry along the floor
+    if (!this->eoWaveDone && (this->skelAnime.curFrame >= 10.0f)) {
+        this->eoWaveDone = true;
+        if (EO_ZF_IS_MINIBOSS(this) && EO_MB_ATTACKS_ON() && Eo_CanAttack(play) && (this->actor.bgCheckFlags & 1)) {
+            Vec3f pos = this->actor.world.pos;
+
+            pos.x += Math_SinS(this->actor.shape.rot.y) * 40.0f;
+            pos.z += Math_CosS(this->actor.shape.rot.y) * 40.0f;
+            EoShot_GroundWave(play, &this->actor, EO_LOOK_DUST, &pos, this->actor.shape.rot.y, 10.0f, 30, 0x08);
+        }
     }
 
     if (SkelAnime_Update(&this->skelAnime)) {
@@ -2027,6 +2053,56 @@ void EnZf_UpdateDamage(EnZf* this, PlayState* play) {
     }
 }
 
+/**
+ * Miniboss & Enemy Overhaul: Dinolfos breathe fire. At middle distance one stops, lets flames flicker at its jaws,
+ * then spits a short stream of fire at Link.
+ */
+void EnZf_EoBreath(EnZf* this, PlayState* play) {
+    Vec3f mouth;
+
+    if ((this->actor.params != ENZF_TYPE_DINOLFOS) || !EO_ENEMIES_ON() || (this->actor.colChkInfo.health == 0)) {
+        this->eoBreath = 0;
+        return;
+    }
+    if ((this->action == ENZF_ACTION_SLASH) || (this->action >= ENZF_ACTION_STUNNED) ||
+        (this->action == ENZF_ACTION_JUMP_FORWARD) || (this->action == ENZF_ACTION_JUMP_BACK) ||
+        (this->action == ENZF_ACTION_RECOIL_FROM_BLOCKED_SLASH) || !Eo_CanAttack(play)) {
+        this->eoBreath = 0;
+        return;
+    }
+
+    mouth = this->actor.world.pos;
+    mouth.y += 62.0f;
+    mouth.x += Math_SinS(this->actor.shape.rot.y) * 28.0f;
+    mouth.z += Math_CosS(this->actor.shape.rot.y) * 28.0f;
+
+    if (this->eoBreath > 0) {
+        this->actor.speedXZ = 0.0f;
+        Math_SmoothStepToS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 1, 0x800, 0);
+        this->actor.world.rot.y = this->actor.shape.rot.y;
+        this->eoBreath--;
+        if (this->eoBreath > 24) {
+            // Wind-up: flames flicker at its jaws
+            Vec3f accel = { 0.0f, 0.3f, 0.0f };
+            Vec3f vel = { 0.0f, 0.5f, 0.0f };
+
+            EffectSsKFire_Spawn(play, &mouth, &vel, &accel, 8, 0);
+        } else if ((this->eoBreath % 4) == 0) {
+            EoShot_OrbAimed(play, &this->actor, EO_KIND_EMBER, &mouth, 11.0f, (s16)Rand_CenteredFloat(0xC00));
+            Audio_PlayActorSound2(&this->actor, NA_SE_EV_FLAME_IGNITION);
+        }
+        return;
+    }
+
+    if (this->eoBreathTimer > 0) {
+        this->eoBreathTimer--;
+    } else if ((this->actor.xzDistToPlayer > 110.0f) && (this->actor.xzDistToPlayer < 280.0f) &&
+               Actor_IsFacingPlayer(&this->actor, 0x2000) && (this->actor.bgCheckFlags & 1)) {
+        this->eoBreath = 36;
+        this->eoBreathTimer = 120 + (s16)Rand_ZeroFloat(90.0f);
+    }
+}
+
 void EnZf_Update(Actor* thisx, PlayState* play) {
     s32 pad;
     EnZf* this = (EnZf*)thisx;
@@ -2055,6 +2131,7 @@ void EnZf_Update(Actor* thisx, PlayState* play) {
         }
 
         this->actionFunc(this, play);
+        EnZf_EoBreath(this, play);
     }
 
     if (this->actor.colChkInfo.health > 0) {

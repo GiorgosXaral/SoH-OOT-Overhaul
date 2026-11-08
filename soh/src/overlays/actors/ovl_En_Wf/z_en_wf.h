@@ -81,7 +81,12 @@ typedef struct EnWf {
     /* 0x04BC */ Vec3f unk_4BC;
     /* 0x04C8 */ Vec3f unk_4C8;
     /* 0x04D4 */ Vec3s unk_4D4;
-} EnWf; // size = 0x04DC
+    // Miniboss & Enemy Overhaul
+    u8 eoInitDone;
+    u8 eoMiniboss;
+    u8 eoHowled;
+    s16 eoMaxHealth;
+} EnWf;
 
 typedef enum {
     /* 0 */ WOLFOS_NORMAL,

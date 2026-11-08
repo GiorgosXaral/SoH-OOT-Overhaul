@@ -35,6 +35,11 @@ typedef struct EnIk {
     /* 0x04D0 */ u32 npcAction;
     /* 0x04D4 */ s32 unk_4D4;
     /* 0x04D8 */ char unk_4D8[0x04];
-} EnIk; // size = 0x04DC
+    // Miniboss & Enemy Overhaul
+    s16 eoMaxHealth;
+    s16 eoAxeCooldown;
+    s16 eoAxeWait;
+    u8 eoAxeThrown;
+} EnIk;
 
 #endif
