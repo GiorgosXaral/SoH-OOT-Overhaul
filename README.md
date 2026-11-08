@@ -1,57 +1,116 @@
-![Ship of Harkinian](docs/shiptitle.darkmode.png#gh-dark-mode-only)
-![Ship of Harkinian](docs/shiptitle.lightmode.png#gh-light-mode-only)
+# SoH-OOT-Overhaul
 
-## Website
+A modified version of [Ship of Harkinian](https://github.com/HarbourMasters/Shipwright) 9.2.3 (Ackbar Delta), the PC port of *The Legend of Zelda: Ocarina of Time*, with tougher and smarter bosses and enemies, an A Link to the Past style Master Sword beam, and better Epona controls.
 
-Official Website: https://www.shipofharkinian.com/
+Every change can be switched on or off in the in-game menu (press **ESC**). All of them are **on by default**; turning one off gives you the original behavior back.
 
-## Discord
+This is a fan project and is not affiliated with HarbourMasters. You still need your own legally acquired Ocarina of Time ROM.
 
-Official Discord: https://discord.com/invite/shipofharkinian
+---
 
-If you're having any trouble after reading through this `README`, feel free to ask for help in the Support text channels. Please keep in mind that we do not condone piracy.
+## What's changed
 
-# Quick Start
+### Master Sword Beam
+*Enhancements → Items*
 
-The Ship does not include any copyrighted assets.  You are required to provide a supported copy of the game.
+- With full hearts, each normal Master Sword slash throws a spinning blue-white beam of light, like in *A Link to the Past*.
+- It hits for exactly the damage of a Master Sword slash, one beam at a time, and disappears when it hits an enemy, a shield or a wall.
+- When you're locked on with Z, it aims up or down at the target.
+- Jump attacks and spin attacks are unchanged.
 
-### 1. Verify your ROM dump
-You can verify you have dumped a supported copy of the game by using the compatibility checker at https://ship.equipment/. If you'd prefer to manually validate your ROM dump, you can cross-reference its `sha1` hash with the hashes [here](docs/supportedHashes.json).
+### Boss Overhaul
+*Enhancements → Difficulty → Enemies* - two switches: **Double HP** and **Extra Attacks**
 
-### 2. Download The Ship of Harkinian from [Releases](https://github.com/HarbourMasters/Shipwright/releases)
+Every main boss has twice the health, learns new attacks, and becomes more aggressive ("enraged") once badly hurt. Changes take effect the next time a boss fight starts.
 
-### 3. Launch the Game!
-#### Windows
-* Extract the zip
-* Launch `soh.exe`
+| Boss | Health | What's new |
+| - | - | - |
+| **Gohma** | 10 → 20 hits | Five baby Gohmas on the ceiling instead of three. Lunges forward before the floor slam. Starts attacking from further away (210 instead of 150). Enraged: walks faster. |
+| **King Dodongo** | 12 → 24 hits | Fire breath fans out with two extra angled jets. Leaves burning patches while rolling. Enraged: rolls faster, burns longer, and answers every bomb hit with a ring of eight flames. |
+| **Barinade** | Tendrils and Bari take 2 hits; core 4 → 8 per phase | Core moves 35% faster and periodically overcharges, swelling its electric aura (55 → 140) to shock anything nearby. Once the tendrils are gone, the zappers charge at double speed. |
+| **Phantom Ganon** | 30 → 60 hits | New lightning storm once he's lost a third of his health: two strikes near you, three when badly hurt. Green light marks where each bolt will land, so it can be dodged. Switches to his aggressive endgame pattern at half health. |
+| **Volvagia** | 24 → 48 hits | Rocks fall on you when it roars and emerges. Longer chases and rock storms, less idle time, repeated claw swipes. Enraged: rock storms chain straight into a faster chase, with even more rocks. |
+| **Morpha** | 20 → 40 hits | Much less downtime between tentacle attacks, faster swing windup, second tentacle after 2 hits instead of 3, faster core. Enraged: every so often the core abandons its pattern and lunges straight at you. |
+| **Bongo Bongo** | 36 → 72 hits | Each slam sends a second shockwave, sweeps and claps are faster, and both hands often attack together. Claps become much more frequent as the fight goes on. |
+| **Twinrova** | 24 → 48 hits | The sisters need twice as many reflected blasts before merging and fire more often. Merged, she flies and fires faster, recovers sooner, and mixes blast types much earlier. Enraged: chains a second blast immediately. |
+| **Ganondorf** | 40 → 80 hits | **Dark storm:** he blinks across the room, throws a fan of five homing magic balls, then calls down three bolts of lightning (four in the second half). Dark motes mark each bolt's landing spot, so keep moving. The tennis rally is no longer all there is. |
+| **Ganon** | 30 → 60 hits, then 25 → 50 after he gets back up | Walks faster and fights like the beast in *A Link to the Past*: **leaps** across the arena and lands with a ring of fire; **charges** with both swords (sidestep and he gets stuck in the wall, opening his tail); and **sweeps** the floor with a ring of flame that has one gap to escape through. Enraged: swings 25% faster and adds extra swings to his combo. |
 
-#### Linux
-* Place your supported copy of the game in the same folder as the appimage.
-* Execute `soh.appimage`.  You may have to `chmod +x` the appimage via terminal.
+### Miniboss & Enemy Overhaul
+*Enhancements → Difficulty → Enemies*
 
-#### macOS
-* Run `soh.app`. When prompted, select your supported copy of the game.
-* You should see a notification saying `Processing OTR`, then, once the process is complete, you should get a notification saying `OTR Successfully Generated`, then the game should start.
+New moves are built only from things already in the game. Original openings are never shortened, anything a miniboss summons vanishes when it falls, and floor shockwaves can be cleared with any jump, sidehop or backflip.
 
-#### Nintendo Switch
-* Run one of the PC releases to generate an `oot.o2r` and/or `oot-mq.o2r` file. After launching the game on PC, you will be able to find these files in the same directory as `soh.exe` or `soh.appimage`. On macOS, these files can be found in `/Users/<username>/Library/Application Support/com.shipofharkinian.soh/`
-* Copy the files to your sd card
-```
-sdcard
-└── switch
-    └── soh
-        ├── oot-mq.o2r
-        ├── oot.o2r
-        ├── soh.nro
-        └── soh.o2r
-```
-* Launch via Atmosphere's `Game+R` launcher method.
+**Minibosses: Double HP** - twice the health for the Dodongo's Cavern Lizalfos, Stalfos, Big Octo, Flare Dancer, Iron Knuckles (Nabooru included), the Gerudo fighters, the Poe Sisters, and the Wolfos and White Wolfos placed in rooms (not the ones roaming Hyrule Field).
 
-### 4. Play!
+**Minibosses: New Attacks**
+- **Lizalfos** (Dodongo's Cavern): landing shockwaves, and slashes that carry along the floor
+- **Stalfos**: floor-splitting chops, landing shockwaves, and a shield that can shove Link back
+- **Big Octo**: water jets while circling, and a wave when it belly-flops
+- **Flare Dancer**: fireballs, burning footprints and rings of fire; the core spits fire as it runs
+- **Iron Knuckle**: a boomerang axe throw and floor-splitting smashes; the armor bursts off with a shockwave
+- **Gerudo fighters**: a dust sweep after the spin, landing shockwaves, and a vanishing strike from behind
+- **Poe Sisters**: each throws a ball of her own color
+- **Wolfos**: a badly hurt miniboss Wolfos howls for help; White Wolfos claws can freeze
 
-Congratulations, you are now sailing with the Ship of Harkinian! Have fun!
+**Dark Link Rework** - twice the health. Throws shadow bolts when kept at a distance (and dodges arrows to answer with one), bursts into a ring of darkness when you stay close, and once badly hurt swings twice as often and rises from the water in darkness. He stands still while winding up either move - a good moment to hit him.
 
-# Configuration
+**Dead Hand Rework** - twice the health. Bursts out of the ground with a shockwave and spits balls of cursed darkness (three at once when badly hurt, when he also walks faster). His hands reach further, slam the floor to send tremors at you, and burrow up close if you keep away.
+
+**Enemies: New Tricks**
+- **ReDead**: its scream wakes the dead nearby, who chase you further than usual
+- **Gibdo**: sudden lunges
+- **Like Like**: breathes in with its mouth open, dragging you towards it (Iron Boots hold firm)
+- **Octorok**: every third shot is a spread of three rocks
+- **Mad Scrub**: every other spit is a spread of three nuts (all can be sent back)
+- **Armos**: the last hop of a lunge sends out a shockwave
+- **Wallmaster**: a missed grab slams the floor with a shockwave
+- **Freezard**: its icy breath ends with a spit of ice shards
+- **Poe**: flicks embers from its lantern while you watch it
+- **Lizalfos** (outside Dodongo's Cavern): landing shockwaves
+- **Dinolfos**: breathe fire at middle distance
+
+**More Encounters** - some enemies bring one or two of their own kind along, and a few regions add a creature that belongs there (Keese with the field's Stalchildren, Withered Deku Babas in the forest, Fire Keese on the mountain...). Never in boss rooms, shops, minigames, grottos, houses or the Thieves' Hideout.
+- **In Dungeons** - also adds companions inside dungeons, except in rooms that open once every enemy is defeated.
+
+**Rare Elite Enemies** - about one enemy in twenty is an elite: bigger, sparkling gold, with twice the health. It drops a bonus item when defeated (a red or purple rupee, or whatever you're shortest of).
+
+**Ganon's Reign** - once Ganondorf rules Hyrule (as adult Link), companions are twice as common (three times at night) and elites show up more often at night. Needs More Encounters and/or Rare Elite Enemies.
+
+### Epona Control Overhaul
+*Enhancements → Epona*
+
+A port of LT_Schmiddy's "Epona Control Overhaul" mod for *Majora's Mask: Recompiled*.
+
+- **Control Mode**
+  - **Tank**: the original controls - the stick steers left and right, pulling back brakes.
+  - **Freeform** *(default)*: Epona runs wherever you point the stick, relative to the camera, just like Link on foot. Letting go of the stick brakes.
+  - **Hybrid**: Freeform, but switches to Tank while you aim in first person (the bow).
+- **Handling sliders**: turn and brake strength for each mode, plus a minimum turn speed for Freeform.
+- **Bunny Hood Boost**: wearing the Bunny Hood doubles Epona's speed and turn speed.
+- Untick **Epona Control Overhaul** for exactly the original riding.
+
+---
+
+## How to play (Windows)
+
+### 1. Get the game
+Open the [**Actions**](https://github.com/GiorgosXaral/SoH-OOT-Overhaul/actions/workflows/build-overhaul.yml) tab, click the latest successful **build-soh-oot-overhaul** run, and download **soh-oot-overhaul** from the *Artifacts* section at the bottom (you need to be signed in to GitHub).
+
+The download is a complete game folder. You don't need to install the original Ship of Harkinian.
+
+### 2. Check your ROM
+You need your own copy of Ocarina of Time. Check that your ROM dump is supported with the [compatibility checker](https://ship.equipment/), or compare its `sha1` hash with the ones in [docs/supportedHashes.json](docs/supportedHashes.json).
+
+### 3. Launch
+- Unzip the download into its own folder.
+- Run `soh.exe` and select your ROM when asked. On first launch the game builds `oot.o2r` from your ROM; after that it starts straight away.
+
+**Coming from Ship of Harkinian 9.2.3?** Copy the `Save` folder and `shipofharkinian.json` from your old folder into the new one to keep your saves and settings.
+
+---
+
+## Controls
 
 ### Default keyboard configuration
 | N64 | A | B | Z | Start | Analog stick | C buttons | D-Pad |
@@ -66,51 +125,27 @@ Congratulations, you are now sailing with the Ship of Harkinian! Have fun!
 | F5 | Save state |
 | F6 | Change state |
 | F7 | Load state |
-| F9 | Toggle Text-to-Speech (Windows and Mac only) |
+| F9 | Toggle Text-to-Speech |
 | F11 | Fullscreen |
 | Tab | Toggle Alternate assets |
 | Ctrl+R | Reset |
 
-# Project Overview
-Ship of Harkinian (SOH) is built atop a custom library dubbed libultraship (LUS). Back in the N64 days, there was an SDK distributed to developers named libultra; LUS is designed to mimic the functionality of libultra on modern hardware. In addition, we are dependant on the source code provided by the OOT decompilation project.
+### Graphics backends
+DirectX 11 is the default on Windows; OpenGL is also available. You can switch in the **Settings** menu (requires a restart). If the game crashes, open `shipofharkinian.json`, find `gfxbackend:""` and change the value to `sdl` to use OpenGL.
 
-In order for the game to function, you will require a **legally acquired** ROM for Ocarina of Time. Click [here](https://ship.equipment/) to check the compatibility of your specific rom. Any copyrighted assets are extracted from the ROM and reformatted as a .o2r archive file which the code uses.
+## Custom assets
+Custom assets are packed in `.otr` archive files. To use them, place them in the `mods` folder. To make your own, see [retro](https://github.com/HarbourMasters64/retro) (OTR generator) and [fast64](https://github.com/HarbourMasters/fast64) (Blender plugin).
 
-### Graphics Backends
-Currently, there are three rendering APIs supported: DirectX11 (Windows), OpenGL (all platforms), and Metal (MacOS). You can change which API to use in the `Settings` menu of the menubar, which requires a restart.  If you're having an issue with crashing, you can change the API in the `shipofharkinian.json` file by finding the line `gfxbackend:""` and changing the value to `sdl` for OpenGL. DirectX 11 is the default on Windows.
+---
 
-# Custom Assets
+## Building
+Every push to `main` builds a complete Windows game folder automatically with GitHub Actions ([`.github/workflows/build-overhaul.yml`](.github/workflows/build-overhaul.yml)).
 
-Custom assets are packed in `.otr` archive files. To use custom assets, place them in the `mods` folder.
+To build it yourself, follow the original [building instructions](docs/BUILDING.md).
 
-If you're interested in creating and/or packing your own custom asset `.otr` files, check out the following tools:
-* [**retro - OTR generator**](https://github.com/HarbourMasters64/retro)
-* [**fast64 - Blender plugin**](https://github.com/HarbourMasters/fast64)
+## Credits
+- **Ship of Harkinian** by [HarbourMasters](https://github.com/HarbourMasters/Shipwright), built on [libultraship](https://github.com/Kenix3/libultraship) and the Ocarina of Time decompilation project. Full credits: [docs/CREDITS.md](docs/CREDITS.md).
+- **Epona Control Overhaul** originally by LT_Schmiddy for *Majora's Mask: Recompiled*.
+- Original Ship of Harkinian links: [website](https://www.shipofharkinian.com/) · [Discord](https://discord.com/invite/shipofharkinian) (for questions about the original game, not this modified version).
 
-# Development
-### Building
-
-If you want to manually compile SoH, please consult the [building instructions](docs/BUILDING.md).
-
-### Playtesting
-If you want to playtest a continuous integration build, you can find them at the links below. Keep in mind that these are for playtesting only, and you will likely encounter bugs and possibly crashes. 
-
-* [Windows](https://nightly.link/HarbourMasters/Shipwright/workflows/generate-builds/develop/soh-windows.zip)
-* [macOS](https://nightly.link/HarbourMasters/Shipwright/workflows/generate-builds/develop/soh-mac.zip)
-* [Linux](https://nightly.link/HarbourMasters/Shipwright/workflows/generate-builds/develop/soh-linux.zip)
-
-### Further Reading
-More detailed documentation can be found in the 'docs' directory, including the aforementioned [building instructions](docs/BUILDING.md).
-
-* [Credits](docs/CREDITS.md)
-* [Custom Music](docs/CUSTOM_MUSIC.md)
-* [Controller Mapping](docs/GAME_CONTROLLER_DB.md)
-* [Modding](docs/MODDING.md)
-* [Versioning](docs/VERSIONING.md)
-
-<a href="https://github.com/Kenix3/libultraship/">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./docs/poweredbylus.darkmode.png">
-    <img alt="Powered by libultraship" src="./docs/poweredbylus.lightmode.png">
-  </picture>
-</a>
+More documentation: [Custom Music](docs/CUSTOM_MUSIC.md) · [Controller Mapping](docs/GAME_CONTROLLER_DB.md) · [Modding](docs/MODDING.md) · [Versioning](docs/VERSIONING.md)
