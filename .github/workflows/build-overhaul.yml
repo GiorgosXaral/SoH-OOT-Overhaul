@@ -1,0 +1,86 @@
+# Builds SoH-OOT-Overhaul (Ship of Harkinian 9.2.3 with the Boss, Master Sword Beam,
+# Epona and Miniboss & Enemy overhauls built in) for Windows, straight from this repository.
+#
+# Runs on every push to main and from the Actions tab ("Run workflow"). The finished build is
+# the "soh-oot-overhaul" artifact: soh.exe and the DLLs next to it. No new assets are added,
+# so the soh.o2r / oot.o2r from a 9.2.3 install keep working.
+name: build-soh-oot-overhaul
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - name: Keep LF line endings
+      run: git config --global core.autocrlf false
+    - name: Checkout this repo
+      uses: actions/checkout@v6
+      with:
+        submodules: true
+        path: shipwright
+    - name: Install ninja
+      run: |
+        choco install ninja -y
+        Remove-Item -Path "C:\ProgramData\Chocolatey\bin\ccache.exe" -Force -ErrorAction SilentlyContinue
+    - name: Configure Developer Command Prompt
+      uses: ilammy/msvc-dev-cmd@v1
+    - name: Build soh.exe
+      working-directory: shipwright
+      env:
+        VCPKG_ROOT: ${{ github.workspace }}/shipwright/vcpkg
+      run: |
+        cmake -S . -B build-windows -G Ninja -DCMAKE_MAKE_PROGRAM=ninja -DCMAKE_BUILD_TYPE:STRING=Release
+        cmake --build build-windows --config Release --parallel 4
+    # This project's CMake puts the Windows exe in <source>/Release, not in the build folder.
+    # Search for it instead of assuming a path, and never fail: the listing is uploaded either way
+    # so a miss can be diagnosed from the downloaded artifact alone.
+    - name: Collect soh.exe
+      if: always()
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Continue'
+        New-Item -ItemType Directory -Force -Path out | Out-Null
+ 
+        $exe = $null
+        if (Test-Path 'shipwright/Release/soh.exe') {
+          $exe = Get-Item 'shipwright/Release/soh.exe'
+        } else {
+          $exe = Get-ChildItem -Path shipwright -Recurse -Filter soh.exe -File -Force -ErrorAction SilentlyContinue |
+                 Sort-Object Length -Descending | Select-Object -First 1
+        }
+ 
+        $lines = @()
+        if ($exe) {
+          $lines += "FOUND soh.exe: $($exe.FullName)  ($($exe.Length) bytes)"
+          Copy-Item $exe.FullName out/soh.exe -Force
+          $dir = Split-Path $exe.FullName -Parent
+          $lines += "--- files next to it ---"
+          Get-ChildItem -Path $dir -File -ErrorAction SilentlyContinue | ForEach-Object {
+            $lines += "  $($_.Name)  $($_.Length)"
+            if ($_.Extension -eq '.dll') { Copy-Item $_.FullName out/ -Force }
+          }
+        } else {
+          $lines += "NO soh.exe ANYWHERE"
+        }
+ 
+        $lines += "--- every .exe built (vcpkg excluded) ---"
+        Get-ChildItem -Path shipwright -Recurse -Filter *.exe -File -Force -ErrorAction SilentlyContinue |
+          Where-Object { $_.FullName -notmatch '[\\/]vcpkg[\\/]' } |
+          ForEach-Object { $lines += "  $($_.FullName)  $($_.Length)" }
+ 
+        $lines | Out-File -FilePath out/listing.txt -Encoding utf8
+        $lines | Write-Host
+        exit 0
+    - name: Upload soh.exe
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: soh-oot-overhaul
+        path: out
+        if-no-files-found: warn
+ 
