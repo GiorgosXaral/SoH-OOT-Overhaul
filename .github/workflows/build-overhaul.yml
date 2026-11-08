@@ -124,6 +124,28 @@ jobs:
           Start-Sleep -Seconds 90
         }
         if (-not $ok) { Write-Error "Configure failed 10 times"; exit 1 }
+
+        # libultraship downloads stb_image.h during configure without checking the result,
+        # so a failed GitHub download leaves a broken file and compiling fails later
+        # ("stbi_image_free: identifier not found"). Check it and re-fetch if needed.
+        $stb = 'build-windows/_deps/stb/stb_image.h'
+        $stbUrls = @(
+          'https://raw.githubusercontent.com/nothings/stb/0bc88af4de5fb022db643c2d8e549a0927749354/stb_image.h',
+          'https://cdn.jsdelivr.net/gh/nothings/stb@0bc88af4de5fb022db643c2d8e549a0927749354/stb_image.h'
+        )
+        function Test-Stb { (Test-Path $stb) -and ((Get-Item $stb).Length -gt 100000) -and (Select-String -Path $stb -SimpleMatch 'stbi_image_free' -Quiet) }
+        foreach ($round in 1..4) {
+          if (Test-Stb) { break }
+          foreach ($url in $stbUrls) {
+            Write-Host "stb_image.h is missing or broken; downloading from $url"
+            curl.exe -fsSL --retry 3 --retry-all-errors --retry-delay 10 -o $stb $url
+            if (Test-Stb) { break }
+          }
+          if (-not (Test-Stb)) { Start-Sleep -Seconds 30 }
+        }
+        if (-not (Test-Stb)) { Write-Error "Could not get a valid stb_image.h"; exit 1 }
+        Write-Host "stb_image.h OK ($((Get-Item $stb).Length) bytes)"
+
         cmake --build build-windows --config Release --parallel 4
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     - name: Save library cache
@@ -151,10 +173,14 @@ jobs:
       shell: pwsh
       run: |
         $file = 'build-windows/gamecontrollerdb.txt'
-        $url = 'https://raw.githubusercontent.com/mdqinc/SDL_GameControllerDB/master/gamecontrollerdb.txt'
+        $urls = @(
+          'https://raw.githubusercontent.com/mdqinc/SDL_GameControllerDB/master/gamecontrollerdb.txt',
+          'https://cdn.jsdelivr.net/gh/mdqinc/SDL_GameControllerDB@master/gamecontrollerdb.txt'
+        )
         foreach ($try in 1..6) {
           if ((Test-Path $file) -and (Get-Item $file).Length -gt 10000) { break }
-          Write-Host "=== Download attempt $try of 6 ==="
+          $url = $urls[($try - 1) % 2]
+          Write-Host "=== Download attempt $try of 6: $url ==="
           curl.exe -fsSL --retry 3 --retry-all-errors --retry-delay 10 -o $file $url
           if (-not ((Test-Path $file) -and (Get-Item $file).Length -gt 10000)) { Start-Sleep -Seconds 30 }
         }
