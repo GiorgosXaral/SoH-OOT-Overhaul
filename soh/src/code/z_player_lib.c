@@ -493,6 +493,17 @@ void Player_SetBootData(PlayState* play, Player* this) {
     if (play->roomCtx.curRoom.behaviorType1 == ROOM_BEHAVIOR_TYPE1_2) {
         REG(45) = 500;
     }
+
+    // #region SoH-OOT-Overhaul [Enhancement] Swimming Overhaul: Iron Boots Underwater
+    // Underwater the Iron Boots accelerate at 80 (normal: 200) and turn at 500 (normal: 2000).
+    // Double both while underwater; on land the boots stay as heavy as in vanilla.
+    if ((currentBoots == PLAYER_BOOTS_IRON_UNDERWATER) &&
+        CVarGetInteger(CVAR_ENHANCEMENT("SwimOverhaul.Enabled"), 1) &&
+        CVarGetInteger(CVAR_ENHANCEMENT("SwimOverhaul.IronBoots"), 1)) {
+        REG(19) *= 2;
+        REG(27) *= 2;
+    }
+    // #endregion
 }
 
 // Custom method used to determine if we're using a custom model for link

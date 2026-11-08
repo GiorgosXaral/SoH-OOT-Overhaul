@@ -1530,6 +1530,61 @@ void SohMenu::AddMenuEnhancements() {
             "Freeform: Epona always turns by at least this much each frame, and snaps onto the stick direction once "
             "she's closer than this. 182 is one degree."));
 
+    // Swimming Overhaul
+    path.sidebarName = "Swimming";
+    AddSidebarEntry("Enhancements", path.sidebarName, 3);
+    path.column = SECTION_COLUMN_1;
+    auto swimOverhaulDisabledFunc = [](WidgetInfo& info) {
+        info.options->disabled = !CVarGetInteger(CVAR_ENHANCEMENT("SwimOverhaul.Enabled"), 1);
+        info.options->disabledTooltip = "This option is disabled because \"Swimming Overhaul\" is turned off.";
+    };
+    AddWidget(path, "Swimming Overhaul", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "Swimming Overhaul", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("SwimOverhaul.Enabled"))
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Smoother, faster and more responsive swimming and diving.\n\n"
+            "Turn this off for exactly the original swimming. How deep Link can dive still depends on the Silver "
+            "and Golden Scale."));
+    AddWidget(path, "Swim Speed: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("SwimOverhaul.Speed"))
+        .PreFunc(swimOverhaulDisabledFunc)
+        .Options(FloatSliderOptions().Min(1.0f).Max(2.0f).Step(0.05f).DefaultValue(1.3f).Format("%.2fx").Tooltip(
+            "How fast Link swims, compared to the original game."));
+    AddWidget(path, "Smooth Strokes", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("SwimOverhaul.SmoothStrokes"))
+        .PreFunc(swimOverhaulDisabledFunc)
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Link speeds up steadily while you hold the stick, instead of surging forward on each stroke and "
+            "slowing down in between."));
+    AddWidget(path, "Faster Turning", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("SwimOverhaul.FasterTurning"))
+        .PreFunc(swimOverhaulDisabledFunc)
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Link turns about 75% faster while swimming, and stops three times quicker when you reverse direction."));
+    AddWidget(path, "Zora Tunic Bonus", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("SwimOverhaul.ZoraTunic"))
+        .PreFunc(swimOverhaulDisabledFunc)
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip("Link swims 20% faster while wearing the Zora Tunic."));
+    path.column = SECTION_COLUMN_2;
+    AddWidget(path, "Diving", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "Faster Diving", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("SwimOverhaul.FasterDiving"))
+        .PreFunc(swimOverhaulDisabledFunc)
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Link sinks about twice as fast while you hold A, and steers at full speed underwater instead of half "
+            "speed."));
+    AddWidget(path, "Faster Resurfacing", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("SwimOverhaul.FasterResurfacing"))
+        .PreFunc(swimOverhaulDisabledFunc)
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Link rises back to the surface about 50% faster after a dive."));
+    AddWidget(path, "Iron Boots Underwater", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("SwimOverhaul.IronBoots"))
+        .PreFunc(swimOverhaulDisabledFunc)
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "With the Iron Boots on underwater, Link gets moving and turns about twice as fast. On land the boots "
+            "are as heavy as ever.\n\nTakes effect the next time Link enters water or changes boots."));
+
     // Minigames
     path.sidebarName = "Minigames";
     AddSidebarEntry("Enhancements", path.sidebarName, 3);

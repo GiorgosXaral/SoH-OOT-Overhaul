@@ -90,6 +90,21 @@ A port of LT_Schmiddy's "Epona Control Overhaul" mod for *Majora's Mask: Recompi
 - **Bunny Hood Boost**: wearing the Bunny Hood doubles Epona's speed and turn speed.
 - Untick **Epona Control Overhaul** for exactly the original riding.
 
+### Swimming Overhaul
+*Enhancements → Swimming*
+
+| Option | What it does |
+| - | - |
+| **Swim Speed** | 1.0x to 2.0x (default 1.3x) |
+| **Smooth Strokes** | Link speeds up steadily while you hold the stick, instead of surging on each stroke and slowing in between |
+| **Faster Turning** | Turns about 75% faster, and stops three times quicker when you reverse direction |
+| **Zora Tunic Bonus** | 20% faster swimming while wearing the Zora Tunic |
+| **Faster Diving** | Sinks about twice as fast while holding A, with full steering underwater instead of half |
+| **Faster Resurfacing** | Rises back to the surface about 50% faster |
+| **Iron Boots Underwater** | Gets moving and turns about twice as fast underwater; on land the boots are as heavy as ever |
+
+How deep Link can dive still depends on the Silver and Golden Scale. Untick **Swimming Overhaul** for exactly the original swimming.
+
 ### Instant Text
 *Enhancements → Skips & Speed-ups*
 

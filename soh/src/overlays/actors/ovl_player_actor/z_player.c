@@ -12770,9 +12770,104 @@ s16 func_8084ABD8(PlayState* play, Player* this, s32 arg2, s16 arg3) {
     return func_80836AB8(this, (play->shootingGalleryStatus != 0) || func_8002DD78(this) || func_808334B4(this)) - arg3;
 }
 
+// #region SoH-OOT-Overhaul [Enhancement] Swimming Overhaul
+// Every option is on by default; the master switch turns all of them off at once.
+static s32 SwimOverhaul_Enabled(void) {
+    return CVarGetInteger(CVAR_ENHANCEMENT("SwimOverhaul.Enabled"), 1);
+}
+
+static s32 SwimOverhaul_SmoothStrokes(void) {
+    return SwimOverhaul_Enabled() && CVarGetInteger(CVAR_ENHANCEMENT("SwimOverhaul.SmoothStrokes"), 1);
+}
+
+static s32 SwimOverhaul_FasterTurning(void) {
+    return SwimOverhaul_Enabled() && CVarGetInteger(CVAR_ENHANCEMENT("SwimOverhaul.FasterTurning"), 1);
+}
+
+static s32 SwimOverhaul_FasterDiving(void) {
+    return SwimOverhaul_Enabled() && CVarGetInteger(CVAR_ENHANCEMENT("SwimOverhaul.FasterDiving"), 1);
+}
+
+static s32 SwimOverhaul_FasterResurfacing(void) {
+    return SwimOverhaul_Enabled() && CVarGetInteger(CVAR_ENHANCEMENT("SwimOverhaul.FasterResurfacing"), 1);
+}
+
+// How hard Link brakes when the stick points behind him (vanilla: 1.0 per frame).
+static f32 SwimOverhaul_ReverseBrake(void) {
+    return SwimOverhaul_FasterTurning() ? 3.0f : 1.0f;
+}
+
+// Swim speed multiplier: the Swim Speed slider, times the Zora Tunic bonus when worn.
+static f32 SwimOverhaul_SpeedMult(Player* this) {
+    f32 mult = CVarGetFloat(CVAR_ENHANCEMENT("SwimOverhaul.Speed"), 1.3f);
+
+    mult = CLAMP(mult, 1.0f, 2.0f);
+    if (CVarGetInteger(CVAR_ENHANCEMENT("SwimOverhaul.ZoraTunic"), 1) && (this->currentTunic == PLAYER_TUNIC_ZORA)) {
+        mult *= 1.2f;
+    }
+    return mult;
+}
+
+// The Cheats menu speed modifier, applied the same way the vanilla path below applies it.
+static f32 SwimOverhaul_CheatMod(void) {
+    f32 swimMod = 1.0f;
+
+    if (CVarGetFloat(CVAR_CHEAT("SpeedModifier.Value"), 1.0f) != 1.0f) {
+        if (CVarGetInteger(CVAR_CHEAT("SpeedModifier.SpeedToggle"), 0) == 1) {
+            if (gWalkSpeedToggle) {
+                swimMod *= CVarGetFloat(CVAR_CHEAT("SpeedModifier.Value"), 1.0f);
+            }
+        } else if (sControlInput != NULL) {
+            const s32 mod1Mask = CVarGetInteger(CVAR_CHEAT("SpeedModifier.Btn"), BTN_CUSTOM_MODIFIER1);
+
+            if (mod1Mask != 0 && CHECK_BTN_ALL(sControlInput->cur.button, mod1Mask)) {
+                swimMod *= CVarGetFloat(CVAR_CHEAT("SpeedModifier.Value"), 1.0f);
+            }
+        }
+    }
+    return swimMod;
+}
+
+// Horizontal swimming with the overhaul on. Vanilla only accelerates during frames 10-20 of each
+// stroke and drifts to a stop in between (a surge-and-stall); Smooth Strokes accelerates steadily
+// towards the stick's speed instead. Only ever used for linearVelocity, never for velocity.y.
+static void SwimOverhaul_Move(Player* this, f32* arg1, f32 arg2, s16 arg3) {
+    f32 mod = SwimOverhaul_CheatMod() * SwimOverhaul_SpeedMult(this);
+    f32 cap = (R_RUN_SPEED_LIMIT / 100.0f) * 0.8f * mod;
+    f32 strokeStep;
+
+    if (*arg1 > cap) {
+        *arg1 = cap;
+    }
+
+    if (SwimOverhaul_SmoothStrokes()) {
+        Math_AsymStepToF(arg1, arg2 * 0.8f * mod, 0.6f * mod, (fabsf(*arg1) * 0.02f) + 0.05f);
+    } else {
+        strokeStep = this->skelAnime.curFrame - 10.0f;
+        if ((0.0f < strokeStep) && (strokeStep < 10.0f)) {
+            strokeStep *= 6.0f;
+        } else {
+            strokeStep = 0.0f;
+            arg2 = 0.0f;
+        }
+        Math_AsymStepToF(arg1, arg2 * 0.8f * mod, strokeStep, (fabsf(*arg1) * 0.02f) + 0.05f);
+    }
+
+    Math_ScaledStepToS(&this->yaw, arg3, SwimOverhaul_FasterTurning() ? 2800 : 1600);
+}
+// #endregion
+
 void func_8084AEEC(Player* this, f32* arg1, f32 arg2, s16 arg3) {
     f32 temp1;
     f32 temp2;
+
+    // #region SoH-OOT-Overhaul [Enhancement] Swimming Overhaul
+    // Vertical movement never comes through here while the overhaul is on (see func_8084DBC4).
+    if (SwimOverhaul_Enabled()) {
+        SwimOverhaul_Move(this, arg1, arg2, arg3);
+        return;
+    }
+    // #endregion
 
     // #region SOH [Enhancement]
     f32 swimMod = 1.0f;
@@ -13913,7 +14008,7 @@ void Player_Action_8084D610(Player* this, PlayState* play) {
             if (sp34 != 0.0f) {
                 s16 temp = this->actor.shape.rot.y - sp32;
 
-                if ((ABS(temp) > 0x6000) && !Math_StepToF(&this->linearVelocity, 0.0f, 1.0f)) {
+                if ((ABS(temp) > 0x6000) && !Math_StepToF(&this->linearVelocity, 0.0f, SwimOverhaul_ReverseBrake())) {
                     return;
                 }
 
@@ -13977,7 +14072,7 @@ s32 func_8084D980(PlayState* play, Player* this, f32* arg2, s16* arg3) {
     if (ABS(temp1) > 0x6000) {
         anim = &gPlayerAnim_link_swimer_swim_wait;
 
-        if (Math_StepToF(&this->linearVelocity, 0.0f, 1.0f)) {
+        if (Math_StepToF(&this->linearVelocity, 0.0f, SwimOverhaul_ReverseBrake())) {
             this->yaw = *arg3;
         } else {
             *arg2 = 0.0f;
@@ -14033,6 +14128,17 @@ void func_8084DBC4(PlayState* play, Player* this, f32 arg2) {
     s16 sp2A;
 
     Player_GetMovementSpeedAndYaw(this, &sp2C, &sp2A, SPEED_MODE_LINEAR, play);
+
+    // #region SoH-OOT-Overhaul [Enhancement] Swimming Overhaul
+    // Faster Diving gives full steering underwater (vanilla: half). Vertical movement keeps the
+    // vanilla calculation; faster sinking and rising are done by the callers.
+    if (SwimOverhaul_Enabled()) {
+        func_8084AEEC(this, &this->linearVelocity, sp2C * (SwimOverhaul_FasterDiving() ? 1.0f : 0.5f), sp2A);
+        SurfaceWithoutSwimMod(this, &this->actor.velocity.y, arg2, this->yaw);
+        return;
+    }
+    // #endregion
+
     func_8084AEEC(this, &this->linearVelocity, sp2C * 0.5f, sp2A);
     // Original implementation of func_8084AEEC (SurfaceWithoutSwimMod) to prevent velocity increases via swim mod which
     // push Link into the air #region SOH [Enhancement]
@@ -14043,6 +14149,19 @@ void func_8084DBC4(PlayState* play, Player* this, f32 arg2) {
         func_8084AEEC(this, &this->actor.velocity.y, arg2, this->yaw);
     }
 }
+
+// #region SoH-OOT-Overhaul [Enhancement] Swimming Overhaul
+// Steady vertical movement for Faster Diving / Faster Resurfacing, instead of vanilla's per-stroke
+// surges. Horizontal steering goes through func_8084AEEC as usual.
+static void SwimOverhaul_DiveMove(PlayState* play, Player* this, f32 targetVelY, f32 stepY) {
+    f32 speed;
+    s16 yaw;
+
+    Player_GetMovementSpeedAndYaw(this, &speed, &yaw, SPEED_MODE_LINEAR, play);
+    func_8084AEEC(this, &this->linearVelocity, speed * (SwimOverhaul_FasterDiving() ? 1.0f : 0.5f), yaw);
+    Math_StepToF(&this->actor.velocity.y, targetVelY, stepY);
+}
+// #endregion
 
 void Player_Action_8084DC48(Player* this, PlayState* play) {
     f32 sp2C;
@@ -14063,7 +14182,7 @@ void Player_Action_8084DC48(Player* this, PlayState* play) {
                     ((this->skelAnime.curFrame >= 22.0f) && !CHECK_BTN_ALL(sControlInput->cur.button, BTN_A))) {
                     func_8083D330(play, this);
                 } else if (LinkAnimation_OnFrame(&this->skelAnime, 20.0f) != 0) {
-                    this->actor.velocity.y = -2.0f;
+                    this->actor.velocity.y = SwimOverhaul_FasterDiving() ? -3.0f : -2.0f;
                 }
 
                 Player_DecelerateToZero(this);
@@ -14075,7 +14194,13 @@ void Player_Action_8084DC48(Player* this, PlayState* play) {
 
             if (CHECK_BTN_ALL(sControlInput->cur.button, BTN_A) && !Player_ActionHandler_2(this, play) &&
                 !(this->actor.bgCheckFlags & 1) && (this->actor.yDistToWater < D_80854784[CUR_UPG_VALUE(UPG_SCALE)])) {
-                func_8084DBC4(play, this, -2.0f);
+                // SoH-OOT-Overhaul: Faster Diving sinks steadily at twice the vanilla rate.
+                // The depth limit above (Silver/Golden Scale) is unchanged.
+                if (SwimOverhaul_FasterDiving()) {
+                    SwimOverhaul_DiveMove(play, this, -4.0f, 0.4f);
+                } else {
+                    func_8084DBC4(play, this, -2.0f);
+                }
             } else {
                 this->av1.actionVar1++;
                 Player_AnimChangeLoopSlowMorph(play, this, &gPlayerAnim_link_swimer_swim_wait);
@@ -14103,7 +14228,18 @@ void Player_Action_8084DC48(Player* this, PlayState* play) {
                 sp2C = 8.0f;
             }
 
-            func_8084DBC4(play, this, sp2C);
+            // SoH-OOT-Overhaul: Faster Resurfacing rises steadily about 50% faster, easing off near
+            // the surface so Link doesn't shoot out of the water.
+            if (SwimOverhaul_FasterResurfacing()) {
+                f32 riseVelY = CLAMP(sp2C * 1.5f, 6.0f, 10.0f);
+
+                if (this->actor.yDistToWater < 80.0f) {
+                    riseVelY = MIN(riseVelY, 6.0f);
+                }
+                SwimOverhaul_DiveMove(play, this, riseVelY, 0.6f);
+            } else {
+                func_8084DBC4(play, this, sp2C);
+            }
         }
     }
 }
@@ -15862,7 +15998,12 @@ void func_808513BC(PlayState* play, Player* this, CsCmdActorCue* cue) {
         } else {
             func_8084B158(play, this, NULL, fabsf(this->actor.velocity.y));
             Math_ScaledStepToS(&this->unk_6C2, -10000, 800);
-            func_8084AEEC(this, &this->actor.velocity.y, 4.0f, this->yaw);
+            // SoH-OOT-Overhaul: vertical movement, so keep the vanilla calculation (no swim speed bonus)
+            if (SwimOverhaul_Enabled()) {
+                SurfaceWithoutSwimMod(this, &this->actor.velocity.y, 4.0f, this->yaw);
+            } else {
+                func_8084AEEC(this, &this->actor.velocity.y, 4.0f, this->yaw);
+            }
         }
         return;
     }
