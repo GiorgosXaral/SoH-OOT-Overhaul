@@ -29,6 +29,43 @@ jobs:
         Remove-Item -Path "C:\ProgramData\Chocolatey\bin\ccache.exe" -Force -ErrorAction SilentlyContinue
     - name: Configure Developer Command Prompt
       uses: ilammy/msvc-dev-cmd@v1
+    # Get vcpkg ready before CMake does, so a failed vcpkg.exe download (HTTP 504 from
+    # GitHub release files) can be retried, and if it keeps failing, the vcpkg.exe that
+    # comes preinstalled on GitHub's Windows machines is used instead.
+    - name: Prepare vcpkg
+      working-directory: shipwright
+      shell: pwsh
+      run: |
+        foreach ($try in 1..3) {
+          if (Test-Path vcpkg/README.md) { break }
+          Remove-Item -Recurse -Force vcpkg -ErrorAction SilentlyContinue
+          git clone --depth 1 https://github.com/Microsoft/vcpkg.git vcpkg
+          if (-not (Test-Path vcpkg/README.md)) { Start-Sleep -Seconds 20 }
+        }
+        if (-not (Test-Path vcpkg/README.md)) { Write-Error "Could not clone vcpkg"; exit 1 }
+        foreach ($try in 1..3) {
+          if (Test-Path vcpkg/vcpkg.exe) { break }
+          Write-Host "=== vcpkg bootstrap attempt $try of 3 ==="
+          & vcpkg/bootstrap-vcpkg.bat -disableMetrics
+          if (-not (Test-Path vcpkg/vcpkg.exe)) { Start-Sleep -Seconds 20 }
+        }
+        if (-not (Test-Path vcpkg/vcpkg.exe)) {
+          Write-Host "Download kept failing; using the runner's preinstalled vcpkg.exe"
+          Copy-Item "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" vcpkg/vcpkg.exe
+        }
+        & vcpkg/vcpkg.exe version
+        exit 0
+    # Keep compiled libraries between builds, so later builds skip most downloads and compiling.
+    - name: Restore library cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/AppData/Local/vcpkg/archives
+          shipwright/vcpkg/downloads
+        key: vcpkg-${{ runner.os }}-${{ hashFiles('shipwright/CMakeLists.txt') }}-${{ github.run_id }}
+        restore-keys: |
+          vcpkg-${{ runner.os }}-${{ hashFiles('shipwright/CMakeLists.txt') }}-
+          vcpkg-${{ runner.os }}-
     - name: Build soh.exe
       working-directory: shipwright
       env:
@@ -43,7 +80,7 @@ jobs:
           cmake -S . -B build-windows -G Ninja -DCMAKE_MAKE_PROGRAM=ninja -DCMAKE_BUILD_TYPE:STRING=Release
           if ($LASTEXITCODE -eq 0) { $ok = $true; break }
           Remove-Item -Recurse -Force build-windows -ErrorAction SilentlyContinue
-          Start-Sleep -Seconds 30
+          Start-Sleep -Seconds 60
         }
         if (-not $ok) { Write-Error "Configure failed 3 times"; exit 1 }
         cmake --build build-windows --config Release --parallel 4
