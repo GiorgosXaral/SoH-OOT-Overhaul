@@ -33,9 +33,21 @@ jobs:
       working-directory: shipwright
       env:
         VCPKG_ROOT: ${{ github.workspace }}/shipwright/vcpkg
+      shell: pwsh
+      # Setup downloads ~20 libraries; a single server hiccup (e.g. HTTP 504) fails it.
+      # Retry up to 3 times, starting the build folder fresh each time.
       run: |
-        cmake -S . -B build-windows -G Ninja -DCMAKE_MAKE_PROGRAM=ninja -DCMAKE_BUILD_TYPE:STRING=Release
+        $ok = $false
+        foreach ($try in 1..3) {
+          Write-Host "=== Configure attempt $try of 3 ==="
+          cmake -S . -B build-windows -G Ninja -DCMAKE_MAKE_PROGRAM=ninja -DCMAKE_BUILD_TYPE:STRING=Release
+          if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+          Remove-Item -Recurse -Force build-windows -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 30
+        }
+        if (-not $ok) { Write-Error "Configure failed 3 times"; exit 1 }
         cmake --build build-windows --config Release --parallel 4
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     # This project's CMake puts the Windows exe in <source>/Release, not in the build folder.
     # Search for it instead of assuming a path, and never fail: the listing is uploaded either way
     # so a miss can be diagnosed from the downloaded artifact alone.
