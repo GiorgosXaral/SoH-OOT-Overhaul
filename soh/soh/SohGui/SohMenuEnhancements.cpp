@@ -44,6 +44,10 @@ static const std::map<int32_t, const char*> eponaControlModes = {
     { 1, "Freeform" },
     { 2, "Hybrid" },
 };
+static const std::map<int32_t, const char*> secretClueStrengths = {
+    { 0, "Subtle" },
+    { 1, "Obvious" },
+};
 
 static const std::map<int32_t, const char*> dekuStickCheat = {
     { DEKU_STICK_NORMAL, "Normal" },
@@ -1584,6 +1588,59 @@ void SohMenu::AddMenuEnhancements() {
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "With the Iron Boots on underwater, Link gets moving and turns about twice as fast. On land the boots "
             "are as heavy as ever.\n\nTakes effect the next time Link enters water or changes boots."));
+
+    // Secret Detection
+    path.sidebarName = "Secrets";
+    AddSidebarEntry("Enhancements", path.sidebarName, 3);
+    path.column = SECTION_COLUMN_1;
+    auto secretDetectionDisabledFunc = [](WidgetInfo& info) {
+        info.options->disabled = !CVarGetInteger(CVAR_ENHANCEMENT("SecretDetection.Enabled"), 1);
+        info.options->disabledTooltip = "This option is disabled because \"Secret Detection\" is turned off.";
+    };
+    AddWidget(path, "Secret Detection", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "Secret Detection", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("SecretDetection.Enabled"))
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Undiscovered secrets near Link give off sparkles. The colour tells you what opens them:\n"
+            "- Gold, with dust: explosives (bombs, bombchus or the hammer)\n"
+            "- Blue: the Song of Storms\n"
+            "- Purple: the Lens of Truth\n"
+            "- White: an invisible item is hidden here\n\n"
+            "Clues stop once the secret has been found."));
+    AddWidget(path, "Clue Strength", WIDGET_CVAR_COMBOBOX)
+        .CVar(CVAR_ENHANCEMENT("SecretDetection.Strength"))
+        .PreFunc(secretDetectionDisabledFunc)
+        .Options(ComboboxOptions().ComboMap(secretClueStrengths).DefaultIndex(1).Tooltip(
+            "Subtle: a few sparkles, only when Link is close.\n\n"
+            "Obvious: more sparkles from further away, and explosive secrets also puff dust."));
+    AddWidget(path, "Require Stone of Agony", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("SecretDetection.RequireStoneOfAgony"))
+        .PreFunc(secretDetectionDisabledFunc)
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
+            "Clues only appear once Link owns the Stone of Agony."));
+    path.column = SECTION_COLUMN_2;
+    AddWidget(path, "Clues", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "Explosive Secrets", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("SecretDetection.Explosive"))
+        .PreFunc(secretDetectionDisabledFunc)
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Gold sparkles and dust: bombable walls and cracked floors, breakable boulders, and hidden grottos "
+            "that open with a bomb or the hammer."));
+    AddWidget(path, "Song Secrets", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("SecretDetection.Song"))
+        .PreFunc(secretDetectionDisabledFunc)
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Blue sparkles: hidden grottos that open with the Song of Storms."));
+    AddWidget(path, "Lens Secrets", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("SecretDetection.Lens"))
+        .PreFunc(secretDetectionDisabledFunc)
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Purple sparkles: fake walls, invisible paths and platforms, and invisible chests. They stop while the "
+            "Lens of Truth is in use."));
+    AddWidget(path, "Hidden Items", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("SecretDetection.Items"))
+        .PreFunc(secretDetectionDisabledFunc)
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip("White sparkles: invisible items hidden in a spot."));
 
     // Minigames
     path.sidebarName = "Minigames";

@@ -105,6 +105,22 @@ A port of LT_Schmiddy's "Epona Control Overhaul" mod for *Majora's Mask: Recompi
 
 How deep Link can dive still depends on the Silver and Golden Scale. Untick **Swimming Overhaul** for exactly the original swimming.
 
+### Secret Detection
+*Enhancements → Secrets*
+
+Undiscovered secrets near Link give off sparkles, and the colour tells you what opens them. Clues stop by themselves once a secret has been found.
+
+| Clue | Opens with | Covers |
+| - | - | - |
+| **Gold sparkles + dust** | Bombs, bombchus or the hammer | Bombable walls and cracked floors, breakable boulders, hidden grottos |
+| **Blue sparkles** | Song of Storms | Hidden grottos that open with the song |
+| **Purple sparkles** | Lens of Truth | Fake walls, invisible paths and platforms, invisible chests (paused while the Lens is in use) |
+| **White sparkles** | Just look closely | Invisible items hidden in a spot |
+
+- **Clue Strength**: *Subtle* (a few sparkles, close range) or *Obvious* (default: more sparkles from further away, plus dust).
+- **Require Stone of Agony**: clues only appear once you own the Stone of Agony (off by default).
+- Each clue type has its own switch.
+
 ### Instant Text
 *Enhancements → Skips & Speed-ups*
 
