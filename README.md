@@ -90,6 +90,13 @@ A port of LT_Schmiddy's "Epona Control Overhaul" mod for *Majora's Mask: Recompi
 - **Bunny Hood Boost**: wearing the Bunny Hood doubles Epona's speed and turn speed.
 - Untick **Epona Control Overhaul** for exactly the original riding.
 
+### Instant Text
+*Enhancements → Skips & Speed-ups*
+
+- Each text box appears complete at once instead of being typed out. You still press A to go to the next box.
+- A character's pause in the middle of a box still waits for A, and Ocarina prompts, Yes/No choices and timed text work as usual.
+- Untick **Instant Text** to go back to the normal typing effect and the Text Speed sliders.
+
 ---
 
 ## How to play (Windows)

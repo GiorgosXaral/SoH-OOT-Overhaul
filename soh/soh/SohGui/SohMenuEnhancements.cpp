@@ -447,6 +447,13 @@ void SohMenu::AddMenuEnhancements() {
         .CVar(CVAR_ENHANCEMENT("SlowTextSpeed"))
         .Options(IntSliderOptions().Min(1).Max(5).DefaultValue(1).Format("%dx").Tooltip(
             "Changes the speed of sections of text that normally are paced slower than the text surrounding it."));
+    AddWidget(path, "Instant Text", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("InstantText"))
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Each text box appears complete at once instead of being typed out (overrides both text speed "
+            "sliders). You still press A to go to the next box.\n\n"
+            "A character's pause in the middle of a box still waits for A, and Ocarina prompts, Yes/No "
+            "choices and timed text work as usual."));
 
     path.column = SECTION_COLUMN_2;
     AddWidget(path, "Animations", WIDGET_SEPARATOR_TEXT);

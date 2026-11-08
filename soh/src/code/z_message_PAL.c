@@ -1276,6 +1276,21 @@ void Message_DrawTextJPN(PlayState* play, Gfx** gfxP) {
         }
     }
 
+    // #region SOH [Enhancement] Instant Text: reveal everything up to the next stop at once
+    if (CVarGetInteger(CVAR_ENHANCEMENT("InstantText"), 1)) {
+        // Codes that only act when the text reaches them exactly must stay reachable.
+        for (j = i; j < msgCtx->decodedTextLen; j++) {
+            if (msgCtx->msgBufDecodedWide[j] == MESSAGE_AWAIT_BUTTON_PRESS_JPN ||
+                msgCtx->msgBufDecodedWide[j] == MESSAGE_OCARINA_JPN) {
+                break;
+            }
+        }
+        msgCtx->textDrawPos = j + 1;
+        msgCtx->textDelayTimer = 0;
+        *gfxP = gfx;
+        return;
+    }
+    // #endregion
     if (msgCtx->textDelay == 0) {
         msgCtx->textDrawPos = i + gTextSpeed;
         if (msgCtx->textDrawPos > msgCtx->decodedTextLen) {
@@ -1626,6 +1641,21 @@ void Message_DrawText(PlayState* play, Gfx** gfxP) {
                 break;
         }
     }
+    // #region SOH [Enhancement] Instant Text: reveal everything up to the next stop at once
+    if (CVarGetInteger(CVAR_ENHANCEMENT("InstantText"), 1)) {
+        // Codes that only act when the text reaches them exactly must stay reachable.
+        for (j = i; j < msgCtx->decodedTextLen; j++) {
+            if (msgCtx->msgBufDecoded[j] == MESSAGE_AWAIT_BUTTON_PRESS ||
+                msgCtx->msgBufDecoded[j] == MESSAGE_OCARINA) {
+                break;
+            }
+        }
+        msgCtx->textDrawPos = j + 1;
+        msgCtx->textDelayTimer = 0;
+        *gfxP = gfx;
+        return;
+    }
+    // #endregion
     if (msgCtx->textDelay == 0) {
         msgCtx->textDrawPos = i + gTextSpeed;
     } else if (msgCtx->textDelayTimer == 0) {
