@@ -2,8 +2,9 @@
 # Epona and Miniboss & Enemy overhauls built in) for Windows, straight from this repository.
 #
 # Runs on every push to main and from the Actions tab ("Run workflow"). The finished build is
-# the "soh-oot-overhaul" artifact: soh.exe and the DLLs next to it. No new assets are added,
-# so the soh.o2r / oot.o2r from a 9.2.3 install keep working.
+# the "soh-oot-overhaul" artifact: a complete Windows game folder (soh.exe, soh.o2r,
+# gamecontrollerdb.txt, assets/ ...), packaged like the official release. Players need only
+# this folder and their own Ocarina of Time ROM; oot.o2r is extracted from the ROM on first launch.
 name: build-soh-oot-overhaul
 on:
   push:
@@ -125,9 +126,6 @@ jobs:
         if (-not $ok) { Write-Error "Configure failed 10 times"; exit 1 }
         cmake --build build-windows --config Release --parallel 4
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    # This project's CMake puts the Windows exe in <source>/Release, not in the build folder.
-    # Search for it instead of assuming a path, and never fail: the listing is uploaded either way
-    # so a miss can be diagnosed from the downloaded artifact alone.
     - name: Save library cache
       if: always()
       uses: actions/cache/save@v4
@@ -136,48 +134,61 @@ jobs:
           ~/AppData/Local/vcpkg/archives
           shipwright/vcpkg/downloads
         key: ${{ steps.libcache.outputs.cache-primary-key }}
-    - name: Collect soh.exe
-      if: always()
+    # soh.o2r is Ship of Harkinian's own resource pack (menus, fonts, shaders, extra
+    # textures). It is built from files in this repo; no ROM is involved.
+    - name: Generate soh.o2r
+      working-directory: shipwright
       shell: pwsh
       run: |
-        $ErrorActionPreference = 'Continue'
-        New-Item -ItemType Directory -Force -Path out | Out-Null
- 
-        $exe = $null
-        if (Test-Path 'shipwright/Release/soh.exe') {
-          $exe = Get-Item 'shipwright/Release/soh.exe'
-        } else {
-          $exe = Get-ChildItem -Path shipwright -Recurse -Filter soh.exe -File -Force -ErrorAction SilentlyContinue |
-                 Sort-Object Length -Descending | Select-Object -First 1
+        cmake --build build-windows --config Release --target GenerateSohOtr
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        if (-not (Test-Path build-windows/soh/soh.o2r)) { Write-Error "soh.o2r was not generated"; exit 1 }
+        Get-Item build-windows/soh/soh.o2r | Format-List Name, Length
+    # CMake downloads the controller mappings while configuring, but ignores a failed
+    # download. Make sure the file is there, retrying if needed, so the package is complete.
+    - name: Make sure gamecontrollerdb.txt is present
+      working-directory: shipwright
+      shell: pwsh
+      run: |
+        $file = 'build-windows/gamecontrollerdb.txt'
+        $url = 'https://raw.githubusercontent.com/mdqinc/SDL_GameControllerDB/master/gamecontrollerdb.txt'
+        foreach ($try in 1..6) {
+          if ((Test-Path $file) -and (Get-Item $file).Length -gt 10000) { break }
+          Write-Host "=== Download attempt $try of 6 ==="
+          curl.exe -fsSL --retry 3 --retry-all-errors --retry-delay 10 -o $file $url
+          if (-not ((Test-Path $file) -and (Get-Item $file).Length -gt 10000)) { Start-Sleep -Seconds 30 }
         }
- 
-        $lines = @()
-        if ($exe) {
-          $lines += "FOUND soh.exe: $($exe.FullName)  ($($exe.Length) bytes)"
-          Copy-Item $exe.FullName out/soh.exe -Force
-          $dir = Split-Path $exe.FullName -Parent
-          $lines += "--- files next to it ---"
-          Get-ChildItem -Path $dir -File -ErrorAction SilentlyContinue | ForEach-Object {
-            $lines += "  $($_.Name)  $($_.Length)"
-            if ($_.Extension -eq '.dll') { Copy-Item $_.FullName out/ -Force }
-          }
-        } else {
-          $lines += "NO soh.exe ANYWHERE"
+        if (-not ((Test-Path $file) -and (Get-Item $file).Length -gt 10000)) { Write-Error "Could not get gamecontrollerdb.txt"; exit 1 }
+        Get-Item $file | Format-List Name, Length
+    # Package the game folder the same way the official release does (cpack): soh.exe,
+    # soh.o2r, gamecontrollerdb.txt, the assets folder used to extract oot.o2r from the
+    # player's ROM on first launch, readme.txt, and debug symbols.
+    - name: Package game folder
+      working-directory: shipwright
+      shell: pwsh
+      run: |
+        Push-Location build-windows
+        cpack
+        $code = $LASTEXITCODE
+        Pop-Location
+        if ($code -ne 0) { exit $code }
+        $zip = Get-ChildItem -Path . -Recurse -Filter *.zip -File |
+               Where-Object { $_.FullName -match '[\\/]_packages[\\/]' } | Select-Object -First 1
+        if (-not $zip) { Write-Error "cpack produced no zip"; exit 1 }
+        Write-Host "Package: $($zip.FullName)"
+        Expand-Archive -Path $zip.FullName -DestinationPath ../out -Force
+        # Some cpack setups put everything in one top-level folder; flatten it if so.
+        $items = Get-ChildItem ../out
+        if ($items.Count -eq 1 -and $items[0].PSIsContainer) {
+          Get-ChildItem $items[0].FullName -Force | Move-Item -Destination ../out
+          Remove-Item $items[0].FullName -Recurse -Force
         }
- 
-        $lines += "--- every .exe built (vcpkg excluded) ---"
-        Get-ChildItem -Path shipwright -Recurse -Filter *.exe -File -Force -ErrorAction SilentlyContinue |
-          Where-Object { $_.FullName -notmatch '[\\/]vcpkg[\\/]' } |
-          ForEach-Object { $lines += "  $($_.FullName)  $($_.Length)" }
- 
-        $lines | Out-File -FilePath out/listing.txt -Encoding utf8
-        $lines | Write-Host
-        exit 0
-    - name: Upload soh.exe
-      if: always()
+        $missing = @('soh.exe', 'soh.o2r', 'gamecontrollerdb.txt', 'assets') | Where-Object { -not (Test-Path "../out/$_") }
+        Get-ChildItem ../out | Format-Table Name, Length
+        if ($missing) { Write-Error "Package is missing: $($missing -join ', ')"; exit 1 }
+    - name: Upload game folder
       uses: actions/upload-artifact@v7
       with:
         name: soh-oot-overhaul
         path: out
-        if-no-files-found: warn
- 
+        if-no-files-found: error
