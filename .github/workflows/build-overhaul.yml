@@ -64,17 +64,47 @@ jobs:
         }
         & vcpkg/vcpkg.exe version
         exit 0
-    # Keep compiled libraries between builds, so later builds skip most downloads and compiling.
+    # Keep downloaded files and compiled libraries between builds. Restored here and saved
+    # at the end of EVERY run (even a failed one), so each retry continues where the last
+    # one stopped instead of downloading and compiling everything again.
     - name: Restore library cache
-      uses: actions/cache@v4
+      id: libcache
+      uses: actions/cache/restore@v4
       with:
         path: |
           ~/AppData/Local/vcpkg/archives
           shipwright/vcpkg/downloads
-        key: vcpkg-${{ runner.os }}-${{ hashFiles('shipwright/CMakeLists.txt') }}-${{ github.run_id }}
+        key: vcpkg-${{ runner.os }}-17216e04-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
-          vcpkg-${{ runner.os }}-${{ hashFiles('shipwright/CMakeLists.txt') }}-
-          vcpkg-${{ runner.os }}-
+          vcpkg-${{ runner.os }}-17216e04-
+    # glew is the only library vcpkg gets from GitHub "release downloads", which GitHub
+    # keeps answering with HTTP 503/504 for Actions machines. Fetch it ahead of time with
+    # long retries, falling back to GLEW's SourceForge mirror, and check its SHA512 against
+    # vcpkg's recipe. vcpkg then finds the file already downloaded and skips its own try.
+    - name: Prefetch glew
+      working-directory: shipwright
+      shell: pwsh
+      run: |
+        $file = 'vcpkg/downloads/glew-2.3.1.tgz'
+        $sha512 = 'cb4caecf32ec0f180c2691dc7769ffc99571c64f259a2663a2b80e788f1c2fd5362c59e0caaeefed6fb78a4070366d244666a657358049b09071b59fae2377e0'
+        $urls = @(
+          'https://github.com/nigels-com/glew/releases/download/glew-2.3.1/glew-2.3.1.tgz',
+          'https://downloads.sourceforge.net/project/glew/glew/2.3.1/glew-2.3.1.tgz'
+        )
+        New-Item -ItemType Directory -Force -Path vcpkg/downloads | Out-Null
+        function Test-Glew { (Test-Path $file) -and ((Get-FileHash $file -Algorithm SHA512).Hash.ToLower() -eq $sha512) }
+        if (Test-Glew) { Write-Host 'glew already downloaded (from cache)'; exit 0 }
+        foreach ($round in 1..4) {
+          foreach ($url in $urls) {
+            Write-Host "=== Round $round of 4: $url ==="
+            curl.exe -fL --retry 3 --retry-all-errors --retry-delay 10 --connect-timeout 30 -o $file $url
+            if (Test-Glew) { Write-Host 'glew downloaded and verified'; exit 0 }
+            Remove-Item $file -Force -ErrorAction SilentlyContinue
+          }
+          Start-Sleep -Seconds 45
+        }
+        Write-Host '::warning::Could not prefetch glew; vcpkg will try once more on its own'
+        exit 0
     - name: Build soh.exe
       working-directory: shipwright
       env:
@@ -97,6 +127,14 @@ jobs:
     # This project's CMake puts the Windows exe in <source>/Release, not in the build folder.
     # Search for it instead of assuming a path, and never fail: the listing is uploaded either way
     # so a miss can be diagnosed from the downloaded artifact alone.
+    - name: Save library cache
+      if: always()
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          ~/AppData/Local/vcpkg/archives
+          shipwright/vcpkg/downloads
+        key: ${{ steps.libcache.outputs.cache-primary-key }}
     - name: Collect soh.exe
       if: always()
       shell: pwsh
