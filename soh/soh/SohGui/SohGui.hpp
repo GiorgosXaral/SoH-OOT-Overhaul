@@ -23,6 +23,7 @@
 #include "soh/Enhancements/debugger/SohStatsWindow.h"
 #include "soh/Enhancements/debugger/valueViewer.h"
 #include "soh/Enhancements/gameplaystatswindow.h"
+#include "soh/Enhancements/ThreadsOfTime/ThreadsOfTimeWindow.h"
 #include "soh/Enhancements/randomizer/randomizer_check_tracker.h"
 #include "soh/Enhancements/randomizer/randomizer_entrance_tracker.h"
 #include "soh/Enhancements/randomizer/randomizer_item_tracker.h"

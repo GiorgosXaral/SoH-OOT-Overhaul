@@ -121,6 +121,19 @@ Undiscovered secrets near Link give off sparkles, and the colour tells you what 
 - **Require Stone of Agony**: clues only appear once you own the Stone of Agony (off by default).
 - Each clue type has its own switch.
 
+### Threads of Time
+*Enhancements → Threads of Time → Open Threads of Time*
+
+A window that follows your journey, so you never need a walkthrough:
+
+- **The Tapestry**: the Spiritual Stones, Medallions and key items, using the game's own icons. Missing ones show as silhouettes and fill in as you play.
+- **Next Objective**: where to go and exactly what to do, as a step-by-step checklist that ticks itself as you play.
+- **The Timeline**: every story milestone in the Child, Adult and Finale chapters. Finished ones show the play time when you reached them; milestones still ahead show only a spoiler-free hint (tick **Show the whole road** to reveal them).
+- **Side Threads**: Epona, the Great Fairies and magic, and Biggoron's Sword, each with steps.
+- **Collection**: hearts, Gold Skulltulas and songs.
+
+It follows the original story, so the directions won't match a Randomizer save.
+
 ### Instant Text
 *Enhancements → Skips & Speed-ups*
 

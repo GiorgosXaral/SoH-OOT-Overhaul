@@ -1642,6 +1642,18 @@ void SohMenu::AddMenuEnhancements() {
         .PreFunc(secretDetectionDisabledFunc)
         .Options(CheckboxOptions().DefaultValue(true).Tooltip("White sparkles: invisible items hidden in a spot."));
 
+    // Threads of Time
+    path.sidebarName = "Threads of Time";
+    AddSidebarEntry("Enhancements", path.sidebarName, 1);
+    path.column = SECTION_COLUMN_1;
+    AddWidget(path, "Open Threads of Time", WIDGET_WINDOW_BUTTON)
+        .CVar(CVAR_WINDOW("ThreadsOfTime"))
+        .RaceDisable(false)
+        .WindowName("Threads of Time")
+        .Options(WindowButtonOptions().Tooltip(
+            "Your journey through time: what you've done, what to do next (with step-by-step directions), and "
+            "what still lies ahead, plus side quests and collectibles."));
+
     // Minigames
     path.sidebarName = "Minigames";
     AddSidebarEntry("Enhancements", path.sidebarName, 3);

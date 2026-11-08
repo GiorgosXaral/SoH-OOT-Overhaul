@@ -86,6 +86,7 @@ std::shared_ptr<DLViewerWindow> mDLViewerWindow;
 std::shared_ptr<ValueViewerWindow> mValueViewerWindow;
 std::shared_ptr<MessageViewer> mMessageViewerWindow;
 std::shared_ptr<GameplayStatsWindow> mGameplayStatsWindow;
+std::shared_ptr<ThreadsOfTimeWindow> mThreadsOfTimeWindow;
 std::shared_ptr<CheckTracker::CheckTrackerSettingsWindow> mCheckTrackerSettingsWindow;
 std::shared_ptr<CheckTracker::CheckTrackerWindow> mCheckTrackerWindow;
 std::shared_ptr<EntranceTracker::EntranceTrackerSettingsWindow> mEntranceTrackerSettingsWindow;
@@ -174,6 +175,9 @@ void SetupGuiElements() {
     mGameplayStatsWindow =
         std::make_shared<GameplayStatsWindow>(CVAR_WINDOW("GameplayStats"), "Gameplay Stats", ImVec2(480, 550));
     gui->AddGuiWindow(mGameplayStatsWindow);
+    mThreadsOfTimeWindow =
+        std::make_shared<ThreadsOfTimeWindow>(CVAR_WINDOW("ThreadsOfTime"), "Threads of Time", ImVec2(520, 640));
+    gui->AddGuiWindow(mThreadsOfTimeWindow);
     mCheckTrackerWindow = std::make_shared<CheckTracker::CheckTrackerWindow>(CVAR_WINDOW("CheckTracker"),
                                                                              "Check Tracker", ImVec2(400, 540));
     gui->AddGuiWindow(mCheckTrackerWindow);
@@ -219,6 +223,7 @@ void Destroy() {
     mCheckTrackerWindow = nullptr;
     mCheckTrackerSettingsWindow = nullptr;
     mGameplayStatsWindow = nullptr;
+    mThreadsOfTimeWindow = nullptr;
     mDLViewerWindow = nullptr;
     mValueViewerWindow = nullptr;
     mMessageViewerWindow = nullptr;
