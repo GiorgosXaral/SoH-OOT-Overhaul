@@ -113,6 +113,14 @@ typedef struct BossGanon2 {
     s16 boProjKind;
     s16 boProjLife;
     ColliderCylinder boProjCollider;
+    // Boss Overhaul: new attacks (sword throw, fire slash, tail sweep, roar)
+    s16 boSpecialCooldown;
+    s16 boLastSpecial;
+    s16 boBehindTimer;  // frames Link has spent behind him, near the tail
+    s16 boCloseTimer;   // frames Link has spent right in front of him
+    s16 boActTimer;
+    s16 boTailYaw;      // sideways swing added to the tail joints
+    u8 boHitDone;
 } BossGanon2; // size = 0x08E4 (+ overhaul fields)
 
 #endif

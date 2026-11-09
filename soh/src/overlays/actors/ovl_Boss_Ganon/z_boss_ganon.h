@@ -162,6 +162,30 @@ typedef struct BossGanon {
     /* 0x071A */ u8 useOpenHand;
     /* 0x071B */ u8 windowShatterState;
     s16 boPoundCombo; // Boss Overhaul: set while Ganondorf chains a second floor pound
+
+    // Boss Overhaul: "The King's Blade" (sword fight on foot and in the air, from 2/3 health)
+    u8 boIntroDone;     // the sword has been drawn for the first time
+    u8 boHitDone;       // the current swing already connected (or was blocked)
+    u8 boFootValid;     // boFootY holds a measurement from the last draw
+    u8 boSweepChain;    // sweeps left in the current combo
+    s16 boState;        // BossGanonBoState
+    s16 boTimer;
+    s16 boAttacks;      // attacks since he last landed
+    s16 boStuckHits;    // hits taken while the blade is stuck
+    s16 boOrbitYaw;     // where he is on his flight circle
+    f32 boSword;        // how much of the sword is shown (0 = sheathed, 1 = drawn)
+    f32 boSwordTarget;
+    f32 boBladeFwd;     // how far the blade leans forward from the line of the forearm
+    f32 boBladeUp;      // and upwards
+    f32 boSpeed;        // walking speed
+    f32 boWalkPhase;    // procedural walk cycle
+    f32 boWalkAmt;      // 0 = standing, 1 = full stride
+    f32 boFootY;        // lowest foot height at the last draw
+    Vec3f boHand;       // right hand, measured while drawing
+    Vec3f boElbow;      // right forearm joint, measured while drawing
+    Vec3f boBladeDir;   // world direction of the blade
+    Vec3f boTip;        // world position of the blade's tip
+    Vec3f boTarget;     // where a leap, lunge or dive is aimed
 } BossGanon; // size = 0x71C (vanilla)
 
 #endif

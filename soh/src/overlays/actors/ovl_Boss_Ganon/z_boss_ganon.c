@@ -14,6 +14,8 @@
 #include "soh/OTRGlobals.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "boss_overhaul.h"
+#include "enemy_overhaul.h"
+#include "assets/objects/object_ganon2/object_ganon2.h"
 #include "soh/Enhancements/savestate_serialize.h"
 #include <libultraship/bridge/resourcebridge.h>
 
@@ -53,6 +55,10 @@ void BossGanon_Damaged(BossGanon* this, PlayState* play);
 void BossGanon_SetupWait(BossGanon* this, PlayState* play);
 void BossGanon_SetupChargeLightBall(BossGanon* this, PlayState* play);
 void BossGanon_SetupPlayTennis(BossGanon* this, PlayState* play);
+void BossGanon_SetupChargeBigMagic(BossGanon* this, PlayState* play);
+void BossGanon_SetupVulnerable(BossGanon* this, PlayState* play);
+void BossGanon_BoSword(BossGanon* this, PlayState* play);
+void BossGanon_BoSetupSwordFight(BossGanon* this, PlayState* play);
 
 void BossGanon_DrawEffects(PlayState* play);
 void BossGanon_UpdateEffects(PlayState* play);
@@ -2269,6 +2275,776 @@ void BossGanon_ChargeBigMagic(BossGanon* this, PlayState* play) {
     }
 }
 
+// =====================================================================================================================
+// Boss Overhaul: "The King's Blade"
+//
+// From two thirds of his health Ganondorf lands, draws one of Ganon's great swords (the beast's own model, shrunk)
+// and fights on foot: he walks after Link, leaps into overhead slams, sweeps, lunges, takes off to circle the room
+// firing dark magic, and dive-slashes back down. Below one third he is enraged: faster, longer combos, lightning.
+//
+// No new animations exist, so the walk is made in code (the legs' joints are turned every frame on top of his
+// standing pose) and the swings reuse his own throwing, volleying and pounding animations with the sword in hand.
+// The blade is drawn in world space along his forearm, so it follows whatever the arm does.
+//
+// Openings: a slam or dive that misses leaves the blade stuck in the floor for a moment (sword hits count), and a
+// Light Arrow knocks him down at any time, as in the original fight.
+// =====================================================================================================================
+
+typedef enum {
+    /*  0 */ BO_GS_LAND,        // floats down to the floor
+    /*  1 */ BO_GS_DRAW,        // raises his hand and the sword appears
+    /*  2 */ BO_GS_STALK,       // walks after Link and picks an attack
+    /*  3 */ BO_GS_SLAM_RISE,   // leaps up, drifting towards Link
+    /*  4 */ BO_GS_SLAM_FALL,   // comes down sword-first
+    /*  5 */ BO_GS_STUCK,       // the blade is stuck in the floor: open to sword hits
+    /*  6 */ BO_GS_RECOVER,     // pulls the blade free and stands up
+    /*  7 */ BO_GS_SWEEP,       // a wide horizontal slash
+    /*  8 */ BO_GS_LUNGE_WINDUP,
+    /*  9 */ BO_GS_LUNGE,       // dashes at Link blade-first
+    /* 10 */ BO_GS_TAKEOFF,
+    /* 11 */ BO_GS_FLY,         // circles the room, firing dark magic
+    /* 12 */ BO_GS_DIVE_RISE,   // climbs above Link
+    /* 13 */ BO_GS_DIVE,        // plummets onto him
+} BossGanonBoState;
+
+#define BO_GDF_CVAR_SWORD CVAR_ENHANCEMENT("BossOverhaul.GanondorfSword")
+#define BO_GDF_SWORD_ON() (BO_ATTACKS_ENABLED() && (CVarGetInteger(BO_GDF_CVAR_SWORD, 1) != 0))
+
+#define BO_GDF_FLOOR_Y 0.0f
+#define BO_GDF_ARENA 235.0f           // he stays within this square around the middle of the room
+#define BO_GDF_SWORD_SCALE 0.0055f    // Ganon's sword at 55% of the beast's size
+#define BO_GDF_SWORD_LEN 93.0f        // grip to tip at that size (the model's blade runs 17000 units along +Z)
+#define BO_GDF_FLY_Y 175.0f
+
+// Turn these around if the procedural walk bends the legs the wrong way (Link's skeleton bends knees along +Z).
+#define BO_GDF_HIP_SIGN (-1.0f)
+#define BO_GDF_KNEE_SIGN (1.0f)
+
+// 0 above two thirds of his health, 1 from two thirds, 2 (enraged) from one third
+static s32 BossGanon_BoPhase(BossGanon* this) {
+    s32 health = (s8)this->actor.colChkInfo.health;
+    s32 max = BO_HP(40);
+
+    if ((health * 3) <= max) {
+        return 2;
+    }
+    if ((health * 3) <= (max * 2)) {
+        return 1;
+    }
+    return 0;
+}
+
+static f32 BossGanon_BoRage(BossGanon* this) {
+    return (BossGanon_BoPhase(this) >= 2) ? 1.3f : 1.0f;
+}
+
+static s32 BossGanon_BoIsOpen(BossGanon* this) {
+    return (this->actionFunc == BossGanon_BoSword) && (this->boState == BO_GS_STUCK);
+}
+
+static void BossGanon_BoPlayOnce(BossGanon* this, AnimationHeader* anim, f32 speed, f32 morph) {
+    this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(anim);
+    Animation_MorphToPlayOnce(&this->skelAnime, anim, morph);
+    this->skelAnime.playSpeed = speed;
+}
+
+static s32 BossGanon_BoAnimDone(BossGanon* this) {
+    return this->skelAnime.curFrame >= (this->fwork[GDF_FWORK_1] - 0.5f);
+}
+
+static f32 BossGanon_BoAnimProgress(BossGanon* this) {
+    return (this->fwork[GDF_FWORK_1] > 0.0f) ? (this->skelAnime.curFrame / this->fwork[GDF_FWORK_1]) : 1.0f;
+}
+
+static void BossGanon_BoClampToArena(BossGanon* this) {
+    this->actor.world.pos.x = CLAMP(this->actor.world.pos.x, -BO_GDF_ARENA, BO_GDF_ARENA);
+    this->actor.world.pos.z = CLAMP(this->actor.world.pos.z, -BO_GDF_ARENA, BO_GDF_ARENA);
+}
+
+// Keeps his lowest foot on the floor, using the feet measured at the last draw.
+static void BossGanon_BoStandOnFloor(BossGanon* this, f32 step) {
+    if (this->boFootValid) {
+        f32 offset = this->actor.world.pos.y - this->boFootY; // pelvis height above the feet
+
+        Math_ApproachF(&this->actor.world.pos.y, BO_GDF_FLOOR_Y + offset + 3.0f, 0.5f, step);
+    } else {
+        Math_ApproachF(&this->actor.world.pos.y, BO_GDF_FLOOR_Y + 65.0f, 0.5f, step);
+    }
+    this->actor.velocity.y = 0.0f;
+}
+
+static void BossGanon_BoFace(BossGanon* this, s16 step) {
+    Math_ApproachS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 3, step);
+    this->actor.world.rot.y = this->actor.shape.rot.y;
+}
+
+// Moves along his facing at `speed`, and turns the walk cycle accordingly.
+static void BossGanon_BoWalk(BossGanon* this, f32 speed) {
+    Math_ApproachF(&this->boSpeed, speed, 0.3f, 1.0f);
+    this->actor.world.pos.x += Math_SinS(this->actor.shape.rot.y) * this->boSpeed;
+    this->actor.world.pos.z += Math_CosS(this->actor.shape.rot.y) * this->boSpeed;
+    BossGanon_BoClampToArena(this);
+
+    this->boWalkPhase += this->boSpeed * (M_PI / 55.0f);
+    if (this->boWalkPhase > (2.0f * M_PI)) {
+        this->boWalkPhase -= 2.0f * M_PI;
+    }
+    Math_ApproachF(&this->boWalkAmt, (this->boSpeed > 0.5f) ? 1.0f : 0.0f, 0.2f, 0.1f);
+
+    if ((this->boWalkAmt > 0.5f) && ((s32)(this->boWalkPhase * 10.0f) % 31 == 0)) {
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_WALK);
+    }
+}
+
+static void BossGanon_BoCape(void) {
+    sCape->backPush = -3.0f;
+    sCape->backSwayMagnitude = 0.25f;
+    sCape->sideSwayMagnitude = -3.0f;
+    sCape->minDist = 20.0f;
+}
+
+// Works out where the blade points from the arm measured at the last draw.
+static void BossGanon_BoUpdateBlade(BossGanon* this) {
+    Vec3f arm;
+    Vec3f dir;
+    f32 len;
+    f32 fwdX = Math_SinS(this->actor.shape.rot.y);
+    f32 fwdZ = Math_CosS(this->actor.shape.rot.y);
+
+    arm.x = this->boHand.x - this->boElbow.x;
+    arm.y = this->boHand.y - this->boElbow.y;
+    arm.z = this->boHand.z - this->boElbow.z;
+    len = sqrtf(SQ(arm.x) + SQ(arm.y) + SQ(arm.z));
+    if (len < 1.0f) {
+        arm.x = fwdX;
+        arm.y = 0.0f;
+        arm.z = fwdZ;
+        len = 1.0f;
+    }
+
+    if ((this->actionFunc == BossGanon_BoSword) && (this->boState == BO_GS_STUCK)) {
+        // Planted in the floor in front of him
+        dir.x = fwdX * 0.45f;
+        dir.y = -1.0f;
+        dir.z = fwdZ * 0.45f;
+    } else if ((this->actionFunc == BossGanon_BoSword) && (this->boState == BO_GS_DIVE)) {
+        dir.x = fwdX * 0.2f;
+        dir.y = -1.0f;
+        dir.z = fwdZ * 0.2f;
+    } else {
+        dir.x = (arm.x / len) + (fwdX * this->boBladeFwd);
+        dir.y = (arm.y / len) + this->boBladeUp;
+        dir.z = (arm.z / len) + (fwdZ * this->boBladeFwd);
+    }
+
+    len = sqrtf(SQ(dir.x) + SQ(dir.y) + SQ(dir.z));
+    if (len < 0.01f) {
+        return;
+    }
+    dir.x /= len;
+    dir.y /= len;
+    dir.z /= len;
+
+    Math_ApproachF(&this->boBladeDir.x, dir.x, 0.6f, 0.5f);
+    Math_ApproachF(&this->boBladeDir.y, dir.y, 0.6f, 0.5f);
+    Math_ApproachF(&this->boBladeDir.z, dir.z, 0.6f, 0.5f);
+
+    this->boTip.x = this->boHand.x + (this->boBladeDir.x * BO_GDF_SWORD_LEN);
+    this->boTip.y = this->boHand.y + (this->boBladeDir.y * BO_GDF_SWORD_LEN);
+    this->boTip.z = this->boHand.z + (this->boBladeDir.z * BO_GDF_SWORD_LEN);
+}
+
+// Hits Link if the blade passes through him. A raised shield stops anything but slams (`unblockable`).
+static void BossGanon_BoSwordHit(BossGanon* this, PlayState* play, u8 damage, s32 unblockable) {
+    Player* player = GET_PLAYER(play);
+    Vec3f link = player->actor.world.pos;
+    Vec3f base;
+    Vec3f seg;
+    Vec3f rel;
+    f32 segLenSq;
+    f32 t;
+    f32 distSq;
+
+    if (this->boHitDone || (this->boSword < 0.9f)) {
+        return;
+    }
+
+    link.y += 30.0f;
+    base.x = this->boHand.x + (this->boBladeDir.x * 15.0f);
+    base.y = this->boHand.y + (this->boBladeDir.y * 15.0f);
+    base.z = this->boHand.z + (this->boBladeDir.z * 15.0f);
+    seg.x = this->boTip.x - base.x;
+    seg.y = this->boTip.y - base.y;
+    seg.z = this->boTip.z - base.z;
+    rel.x = link.x - base.x;
+    rel.y = link.y - base.y;
+    rel.z = link.z - base.z;
+
+    segLenSq = SQ(seg.x) + SQ(seg.y) + SQ(seg.z);
+    t = (segLenSq > 0.0f) ? (((rel.x * seg.x) + (rel.y * seg.y) + (rel.z * seg.z)) / segLenSq) : 0.0f;
+    t = CLAMP(t, 0.0f, 1.0f);
+    distSq = SQ(rel.x - (seg.x * t)) + SQ(rel.y - (seg.y * t)) + SQ(rel.z - (seg.z * t));
+
+    if (distSq > SQ(42.0f)) {
+        return;
+    }
+
+    if (!unblockable && (player->stateFlags1 & PLAYER_STATE1_SHIELDING) &&
+        (ABS((s16)(player->actor.shape.rot.y - this->actor.yawTowardsPlayer - 0x8000)) < 0x3000)) {
+        Vec3f spark;
+
+        spark.x = base.x + (seg.x * t);
+        spark.y = base.y + (seg.y * t);
+        spark.z = base.z + (seg.z * t);
+        EffectSsHitMark_SpawnFixedScale(play, 3, &spark); // metal
+        Audio_PlayActorSound2(&player->actor, NA_SE_IT_SHIELD_REFLECT_SW);
+        Actor_SetPlayerKnockbackSmallNoDamage(play, &this->actor, 8.0f, this->actor.yawTowardsPlayer, 2.0f);
+        this->boHitDone = true;
+        return;
+    }
+
+    if (Eo_HurtPlayer(play, &this->actor, damage, this->actor.yawTowardsPlayer, 12.0f, false, false)) {
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_SWDIMP);
+        this->boHitDone = true;
+    }
+}
+
+// The blade hits the floor: dark shockwave and dust, without breaking the floor tiles.
+static void BossGanon_BoImpact(BossGanon* this, PlayState* play, f32 ringRadius) {
+    Vec3f pos = this->boTip;
+    Vec3f vel;
+    s16 i;
+
+    pos.y = BO_GDF_FLOOR_Y;
+    Actor_RequestQuakeAndRumble(&this->actor, play, 8, 15);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_HIT_GND_IMP);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_SWDIMP);
+
+    for (i = 0; i < 40; i++) {
+        vel.x = Rand_CenteredFloat(20.0f);
+        vel.y = Rand_ZeroFloat(14.0f);
+        vel.z = Rand_CenteredFloat(20.0f);
+        BossGanonEff_SpawnLightRay(play, &pos, &vel, &sZeroVec, Rand_ZeroFloat(200.0f) + 400.0f, 13.0f, 0x1E);
+    }
+    BossGanonEff_SpawnShockwave(play, &pos, 0, 2.0f);
+    BossGanonEff_SpawnDustDark(play, &pos, 0.2f, 0.7f);
+
+    EoShot_Ring(play, &this->actor, EO_LOOK_DARK, &pos, ringRadius, 9.0f * BossGanon_BoRage(this), 0x10);
+}
+
+static void BossGanon_BoSetState(BossGanon* this, PlayState* play, s16 state);
+
+// Picks what to do next once he is on his feet and close enough.
+static void BossGanon_BoChooseAttack(BossGanon* this, PlayState* play) {
+    f32 dist = this->actor.xzDistToPlayer;
+    s32 rage = BossGanon_BoPhase(this) >= 2;
+
+    if (this->boAttacks >= (rage ? 4 : 3)) {
+        BossGanon_BoSetState(this, play, BO_GS_TAKEOFF);
+        return;
+    }
+
+    if (dist < 130.0f) {
+        if (Rand_ZeroOne() < 0.6f) {
+            BossGanon_BoSetState(this, play, BO_GS_SWEEP);
+        } else {
+            BossGanon_BoSetState(this, play, BO_GS_SLAM_RISE);
+        }
+    } else if (dist < 320.0f) {
+        if (Rand_ZeroOne() < 0.55f) {
+            BossGanon_BoSetState(this, play, BO_GS_LUNGE_WINDUP);
+        } else {
+            BossGanon_BoSetState(this, play, BO_GS_SLAM_RISE);
+        }
+    }
+}
+
+static void BossGanon_BoSetState(BossGanon* this, PlayState* play, s16 state) {
+    f32 rage = BossGanon_BoRage(this);
+
+    this->boState = state;
+    this->boHitDone = false;
+    this->boBladeFwd = 0.8f;
+    this->boBladeUp = 0.3f;
+
+    switch (state) {
+        case BO_GS_LAND:
+            Animation_MorphToLoop(&this->skelAnime, &gGanondorfFloatAnim, -10.0f);
+            this->fwork[GDF_FWORK_1] = 1000.0f;
+            this->boTimer = 40;
+            break;
+
+        case BO_GS_DRAW:
+            BossGanon_BoPlayOnce(this, &gGanondorfRaiseHandStartAnim, 1.0f, -6.0f);
+            this->boTimer = this->boIntroDone ? 18 : 45;
+            this->boBladeFwd = 0.0f;
+            this->boBladeUp = 1.2f;
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DARKWAVE);
+            if (!this->boIntroDone) {
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_LAUGH);
+            }
+            break;
+
+        case BO_GS_STALK:
+            Animation_MorphToLoop(&this->skelAnime, &gGanondorfStandIdleAnim, -8.0f);
+            this->boTimer = (s16)(Rand_ZeroFloat(30.0f) + ((rage > 1.0f) ? 15.0f : 35.0f));
+            this->boBladeFwd = 1.4f;
+            this->boBladeUp = 0.6f;
+            break;
+
+        case BO_GS_SLAM_RISE:
+            BossGanon_BoPlayOnce(this, &gGanondorfChargeLightBallAnim, rage, -4.0f);
+            this->boTimer = (rage > 1.0f) ? 16 : 22;
+            this->boTarget = GET_PLAYER(play)->actor.world.pos;
+            this->boBladeFwd = -0.4f;
+            this->boBladeUp = 1.5f;
+            this->actor.velocity.y = 14.0f;
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_FLOAT);
+            break;
+
+        case BO_GS_SLAM_FALL:
+            BossGanon_BoPlayOnce(this, &gGanondorfPoundAnim, rage, 0.0f);
+            this->actor.velocity.y = 0.0f;
+            this->boBladeFwd = 1.2f;
+            this->boBladeUp = -0.6f;
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_SWORD);
+            break;
+
+        case BO_GS_STUCK:
+            BossGanon_BoPlayOnce(this, &gGanondorfPoundEndAnim, 0.5f, 0.0f);
+            this->boTimer = (rage > 1.0f) ? 55 : 80;
+            this->boStuckHits = 0;
+            break;
+
+        case BO_GS_RECOVER:
+            BossGanon_BoPlayOnce(this, &gGanondorfGetUp3Anim, rage, -4.0f);
+            sCape->attachShouldersTimer = 18.0f;
+            Audio_PlayActorSound2(&this->actor, NA_SE_EV_GANON_MANTLE);
+            break;
+
+        case BO_GS_SWEEP:
+            if (this->boSweepChain == 0) {
+                this->boSweepChain = (rage > 1.0f) ? 2 : ((Rand_ZeroOne() < 0.4f) ? 1 : 0);
+            } else {
+                this->boSweepChain--;
+            }
+            BossGanon_BoPlayOnce(this, (Rand_ZeroOne() < 0.5f) ? &gGanondorfVolleyRightAnim : &gGanondorfVolleyLeftAnim,
+                                 rage, -3.0f);
+            sCape->attachRightArmTimer = 20;
+            this->boBladeFwd = 0.5f;
+            this->boBladeUp = 0.1f;
+            this->boAttacks++;
+            Audio_PlayActorSound2(&this->actor, NA_SE_EV_GANON_MANTLE);
+            break;
+
+        case BO_GS_LUNGE_WINDUP:
+            BossGanon_BoPlayOnce(this, &gGanondorfBigMagicWindupAnim, rage, -4.0f);
+            this->boTimer = (rage > 1.0f) ? 12 : 18;
+            this->boBladeFwd = -0.5f;
+            this->boBladeUp = 0.8f;
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_CHARGE_MASIC);
+            break;
+
+        case BO_GS_LUNGE:
+            BossGanon_BoPlayOnce(this, &gGanondorfThrowAnim, rage, -2.0f);
+            this->boTimer = 14;
+            this->boTarget = GET_PLAYER(play)->actor.world.pos;
+            this->boBladeFwd = 2.0f;
+            this->boBladeUp = 0.0f;
+            this->boAttacks++;
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_SWORD);
+            break;
+
+        case BO_GS_TAKEOFF:
+            Animation_MorphToLoop(&this->skelAnime, &gGanondorfFloatAnim, -10.0f);
+            this->boTimer = 25;
+            this->boSwordTarget = 0.0f; // he sheathes the sword in shadow while he flies
+            this->boOrbitYaw = Math_Atan2S(this->actor.world.pos.z, this->actor.world.pos.x);
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_FLOAT);
+            break;
+
+        case BO_GS_FLY:
+            this->boTimer = (s16)(Rand_ZeroFloat(40.0f) + 100.0f);
+            break;
+
+        case BO_GS_DIVE_RISE:
+            BossGanon_BoPlayOnce(this, &gGanondorfChargeLightBallAnim, 1.0f, -6.0f);
+            this->boTimer = (rage > 1.0f) ? 20 : 30;
+            this->boSwordTarget = 1.0f;
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DARKWAVE);
+            break;
+
+        case BO_GS_DIVE:
+            BossGanon_BoPlayOnce(this, &gGanondorfPoundAnim, 1.0f, 0.0f);
+            this->boTarget = GET_PLAYER(play)->actor.world.pos;
+            this->actor.velocity.y = 0.0f;
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_SWORD);
+            break;
+    }
+}
+
+void BossGanon_BoSetupSwordFight(BossGanon* this, PlayState* play) {
+    this->actionFunc = BossGanon_BoSword;
+    this->handLightBallScale = 0.0f;
+    this->boAttacks = 0;
+    this->boSweepChain = 0;
+    this->boSpeed = 0.0f;
+    if ((this->boBladeDir.x == 0.0f) && (this->boBladeDir.y == 0.0f) && (this->boBladeDir.z == 0.0f)) {
+        this->boBladeDir.y = 1.0f;
+    }
+    BossGanon_BoSetState(this, play, BO_GS_LAND);
+}
+
+void BossGanon_BoSword(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    f32 rage = BossGanon_BoRage(this);
+    s32 enraged = BossGanon_BoPhase(this) >= 2;
+    Vec3f pos;
+
+    SkelAnime_Update(&this->skelAnime);
+    BossGanon_BoCape();
+
+    if (this->boState < BO_GS_TAKEOFF) {
+        // On foot he can be targeted like any enemy
+        this->actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
+    }
+
+    switch (this->boState) {
+        case BO_GS_LAND:
+            this->boSwordTarget = 0.0f;
+            BossGanon_BoFace(this, 0x800);
+            BossGanon_BoStandOnFloor(this, 6.0f);
+            if ((this->boTimer == 0) ||
+                (this->boFootValid && (this->boFootY < (BO_GDF_FLOOR_Y + 3.0f)) && (this->boTimer < 30))) {
+                this->unk_19F = 1; // dust where he lands
+                BossGanon_BoSetState(this, play, BO_GS_DRAW);
+            }
+            break;
+
+        case BO_GS_DRAW:
+            this->boSwordTarget = 1.0f;
+            BossGanon_BoFace(this, 0x600);
+            BossGanon_BoStandOnFloor(this, 4.0f);
+            if ((this->boSword < 0.95f) && ((this->unk_1A2 % 3) == 0)) {
+                pos.x = this->boHand.x + (this->boBladeDir.x * BO_GDF_SWORD_LEN * Rand_ZeroOne());
+                pos.y = this->boHand.y + (this->boBladeDir.y * BO_GDF_SWORD_LEN * Rand_ZeroOne()) - 20.0f;
+                pos.z = this->boHand.z + (this->boBladeDir.z * BO_GDF_SWORD_LEN * Rand_ZeroOne());
+                Eo_DarkPuff(play, &pos, 0.6f);
+            }
+            if (this->boTimer == 0) {
+                if (!this->boIntroDone) {
+                    this->boIntroDone = true;
+                    Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_PICKOUT);
+                }
+                BossGanon_BoSetState(this, play, BO_GS_STALK);
+            }
+            break;
+
+        case BO_GS_STALK:
+            this->boSwordTarget = 1.0f;
+            BossGanon_BoFace(this, 0x500);
+            BossGanon_BoWalk(this, (this->actor.xzDistToPlayer > 110.0f) ? (3.2f * rage) : 0.0f);
+            BossGanon_BoStandOnFloor(this, 3.0f);
+            if ((this->boTimer == 0) || (this->actor.xzDistToPlayer < 110.0f)) {
+                BossGanon_BoChooseAttack(this, play);
+                if ((this->boState == BO_GS_STALK) && (this->boTimer == 0)) {
+                    // Link keeps his distance: take to the air and use magic, or keep closing in
+                    if (Rand_ZeroOne() < 0.5f) {
+                        BossGanon_BoSetState(this, play, BO_GS_TAKEOFF);
+                    } else {
+                        this->boTimer = 30;
+                    }
+                }
+            }
+            break;
+
+        case BO_GS_SLAM_RISE:
+            BossGanon_BoFace(this, 0x800);
+            Math_ApproachF(&this->actor.world.pos.x, this->boTarget.x, 0.15f, 12.0f * rage);
+            Math_ApproachF(&this->actor.world.pos.z, this->boTarget.z, 0.15f, 12.0f * rage);
+            BossGanon_BoClampToArena(this);
+            this->actor.world.pos.y += this->actor.velocity.y;
+            Math_ApproachF(&this->actor.velocity.y, 0.0f, 1.0f, 1.0f);
+            if (this->boTimer == 0) {
+                BossGanon_BoSetState(this, play, BO_GS_SLAM_FALL);
+            }
+            break;
+
+        case BO_GS_SLAM_FALL:
+        case BO_GS_DIVE:
+            if (this->boState == BO_GS_DIVE) {
+                Math_ApproachF(&this->actor.world.pos.x, this->boTarget.x, 0.3f, 20.0f);
+                Math_ApproachF(&this->actor.world.pos.z, this->boTarget.z, 0.3f, 20.0f);
+                BossGanon_BoClampToArena(this);
+            }
+            sCape->gravity = -1.0f;
+            Math_ApproachF(&this->actor.velocity.y, -45.0f, 1.0f, 8.0f);
+            this->actor.world.pos.y += this->actor.velocity.y;
+            BossGanon_BoSwordHit(this, play, enraged ? 0x28 : 0x20, true);
+
+            if ((this->boFootValid && (this->boFootY <= (BO_GDF_FLOOR_Y + 2.0f))) ||
+                (this->actor.world.pos.y < (BO_GDF_FLOOR_Y + 55.0f))) {
+                BossGanon_BoStandOnFloor(this, 1000.0f);
+                BossGanon_BoImpact(this, play, (this->boState == BO_GS_DIVE) ? 420.0f : 320.0f);
+                if (this->boHitDone) {
+                    BossGanon_BoSetState(this, play, BO_GS_RECOVER); // it connected: no opening
+                } else {
+                    BossGanon_BoSetState(this, play, BO_GS_STUCK);
+                }
+            }
+            break;
+
+        case BO_GS_STUCK:
+            BossGanon_BoStandOnFloor(this, 4.0f);
+            // He strains against the floor, the blade shaking loose
+            if ((this->unk_1A2 % 6) == 0) {
+                pos = this->boTip;
+                pos.y = BO_GDF_FLOOR_Y;
+                Eo_DarkPuff(play, &pos, 0.5f);
+            }
+            if ((this->boTimer == 0) || (this->boStuckHits >= (enraged ? 2 : 3))) {
+                pos = this->actor.world.pos;
+                pos.y = BO_GDF_FLOOR_Y;
+                // Tearing the blade out sends a small ring outwards: jump it
+                EoShot_Ring(play, &this->actor, EO_LOOK_DARK, &pos, 170.0f, 7.0f, 0x08);
+                BossGanon_BoSetState(this, play, BO_GS_RECOVER);
+            }
+            break;
+
+        case BO_GS_RECOVER:
+            BossGanon_BoStandOnFloor(this, 4.0f);
+            BossGanon_BoFace(this, 0x300);
+            if (BossGanon_BoAnimDone(this)) {
+                BossGanon_BoSetState(this, play, BO_GS_STALK);
+            }
+            break;
+
+        case BO_GS_SWEEP:
+            BossGanon_BoStandOnFloor(this, 3.0f);
+            BossGanon_BoFace(this, 0x300);
+            BossGanon_BoWalk(this, 2.0f * rage); // steps into the swing
+            {
+                f32 progress = BossGanon_BoAnimProgress(this);
+
+                if ((progress > 0.2f) && (progress < 0.75f)) {
+                    if (Animation_OnFrame(&this->skelAnime, (s32)(this->fwork[GDF_FWORK_1] * 0.25f))) {
+                        Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_SWORD);
+                    }
+                    BossGanon_BoSwordHit(this, play, enraged ? 0x20 : 0x18, false);
+                }
+            }
+            if (BossGanon_BoAnimDone(this)) {
+                if (this->boSweepChain > 0) {
+                    BossGanon_BoSetState(this, play, BO_GS_SWEEP);
+                } else {
+                    BossGanon_BoSetState(this, play, BO_GS_STALK);
+                    this->boTimer = enraged ? 8 : 20;
+                }
+            }
+            break;
+
+        case BO_GS_LUNGE_WINDUP:
+            BossGanon_BoStandOnFloor(this, 3.0f);
+            BossGanon_BoFace(this, 0x800);
+            BossGanon_BoWalk(this, 0.0f);
+            if (this->boTimer == 0) {
+                BossGanon_BoSetState(this, play, BO_GS_LUNGE);
+            }
+            break;
+
+        case BO_GS_LUNGE:
+            BossGanon_BoStandOnFloor(this, 3.0f);
+            if (this->boTimer > 0) {
+                f32 dx = this->boTarget.x - this->actor.world.pos.x;
+                f32 dz = this->boTarget.z - this->actor.world.pos.z;
+
+                this->actor.world.pos.x += Math_SinS(this->actor.shape.rot.y) * 17.0f * rage;
+                this->actor.world.pos.z += Math_CosS(this->actor.shape.rot.y) * 17.0f * rage;
+                BossGanon_BoClampToArena(this);
+                this->boWalkPhase += M_PI / 4.0f;
+                this->boWalkAmt = 1.0f;
+                if ((SQ(dx) + SQ(dz)) < SQ(40.0f)) {
+                    this->boTimer = 0; // reached where Link was
+                }
+                BossGanon_BoSwordHit(this, play, enraged ? 0x20 : 0x18, false);
+            } else {
+                Math_ApproachZeroF(&this->boWalkAmt, 0.2f, 0.1f);
+            }
+            if ((this->boTimer == 0) && BossGanon_BoAnimDone(this)) {
+                BossGanon_BoSetState(this, play, BO_GS_STALK);
+                this->boTimer = enraged ? 10 : 25;
+            }
+            break;
+
+        case BO_GS_TAKEOFF:
+            this->boWalkAmt = 0.0f;
+            BossGanon_BoFace(this, 0x600);
+            Math_ApproachF(&this->actor.world.pos.y, BO_GDF_FLY_Y, 0.1f, 8.0f);
+            if ((this->boTimer % 6) == 0) {
+                Eo_DarkPuff(play, &this->boHand, 0.5f);
+            }
+            if (this->boTimer == 0) {
+                BossGanon_BoSetState(this, play, BO_GS_FLY);
+            }
+            break;
+
+        case BO_GS_FLY: {
+            f32 radius = 190.0f;
+            f32 tx;
+            f32 tz;
+
+            this->boOrbitYaw += (s16)(0x180 * rage);
+            tx = Math_SinS(this->boOrbitYaw) * radius;
+            tz = Math_CosS(this->boOrbitYaw) * radius;
+            Math_ApproachF(&this->actor.world.pos.x, tx, 0.1f, 9.0f * rage);
+            Math_ApproachF(&this->actor.world.pos.z, tz, 0.1f, 9.0f * rage);
+            Math_ApproachF(&this->actor.world.pos.y, BO_GDF_FLY_Y + (Math_SinS(this->unk_1A2 * 1500) * 15.0f), 0.1f,
+                           5.0f);
+            BossGanon_BoFace(this, 0x800);
+            Sfx_PlaySfxAtPos(&this->actor.projectedPos, NA_SE_EN_FANTOM_FLOAT - SFX_FLAG);
+
+            // A volley of dark magic every so often
+            if ((this->boTimer % (enraged ? 28 : 40)) == 0) {
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_THROW_MASIC);
+                EoShot_OrbFan(play, &this->actor, EO_KIND_DARK, &this->unk_1FC, 9.0f, enraged ? 5 : 3, 0x1000);
+                if (enraged) {
+                    // and lightning: three bolts fall around Link, each spot marked while it falls
+                    s16 k;
+
+                    for (k = 0; k < 3; k++) {
+                        pos = player->actor.world.pos;
+                        pos.x += Rand_CenteredFloat(160.0f);
+                        pos.z += Rand_CenteredFloat(160.0f);
+                        EoShot_FallingOrb(play, &this->actor, EO_KIND_SHOCK, &pos, 350.0f, 0x10);
+                    }
+                    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_HIT_THUNDER);
+                }
+            }
+
+            if (this->boTimer == 0) {
+                f32 roll = Rand_ZeroOne();
+
+                this->boAttacks = 0;
+                if (roll < 0.35f) {
+                    // The original light-ball rally: knock it back to stun him for a Light Arrow
+                    BossGanon_SetupChargeLightBall(this, play);
+                } else if (roll < 0.5f) {
+                    BossGanon_SetupChargeBigMagic(this, play);
+                } else {
+                    BossGanon_BoSetState(this, play, BO_GS_DIVE_RISE);
+                }
+            }
+            break;
+        }
+
+        case BO_GS_DIVE_RISE:
+            BossGanon_BoFace(this, 0x800);
+            Math_ApproachF(&this->actor.world.pos.x, player->actor.world.pos.x, 0.1f, 10.0f);
+            Math_ApproachF(&this->actor.world.pos.z, player->actor.world.pos.z, 0.1f, 10.0f);
+            BossGanon_BoClampToArena(this);
+            Math_ApproachF(&this->actor.world.pos.y, 260.0f, 0.1f, 8.0f);
+            this->boBladeFwd = 0.0f;
+            this->boBladeUp = 1.5f;
+            if (this->boTimer == 0) {
+                BossGanon_BoSetState(this, play, BO_GS_DIVE);
+            }
+            break;
+    }
+
+    if (this->boState >= BO_GS_TAKEOFF) {
+        this->boWalkAmt = 0.0f;
+        this->legSwayEnabled = true;
+    } else if ((this->boState != BO_GS_STALK) && (this->boState != BO_GS_SWEEP) && (this->boState != BO_GS_LUNGE)) {
+        Math_ApproachZeroF(&this->boWalkAmt, 0.3f, 0.1f);
+        this->boSpeed = 0.0f;
+    }
+
+    if (this->boTimer != 0) {
+        this->boTimer--;
+    }
+}
+
+// Called each frame from BossGanon_Update, after the action: sword visibility and blade position.
+static void BossGanon_BoUpdateSword(BossGanon* this) {
+    if (!BO_GDF_SWORD_ON() || (this->csState != 0) || (this->actionFunc == BossGanon_DeathAndTowerCutscene) ||
+        (this->actionFunc == BossGanon_IntroCutscene)) {
+        this->boSword = 0.0f;
+        return;
+    }
+    if (this->actionFunc != BossGanon_BoSword) {
+        // The original attacks use his right hand for magic: the sword fades while he casts
+        if ((this->actionFunc == BossGanon_ChargeLightBall) || (this->actionFunc == BossGanon_PlayTennis) ||
+            (this->actionFunc == BossGanon_ChargeBigMagic) || (this->actionFunc == BossGanon_Wait) ||
+            (this->actionFunc == BossGanon_Block) || (this->actionFunc == BossGanon_PoundFloor)) {
+            this->boSwordTarget = 0.0f;
+        }
+    }
+    Math_ApproachF(&this->boSword, this->boSwordTarget, 1.0f, 0.06f);
+    BossGanon_BoUpdateBlade(this);
+}
+
+// Adds the procedural walk to the leg joints (limbs 20-25: left thigh, shin, foot, right thigh, shin, foot).
+static void BossGanon_BoWalkLimbs(BossGanon* this, s32 limbIndex, Vec3s* rot) {
+    f32 phase;
+    f32 swing;
+    f32 bend;
+    f32 c;
+
+    if ((this->boWalkAmt <= 0.01f) || (limbIndex < 20) || (limbIndex > 25)) {
+        return;
+    }
+
+    phase = this->boWalkPhase + ((limbIndex >= 23) ? M_PI : 0.0f);
+    swing = sinf(phase) * 0x1600 * this->boWalkAmt;
+    c = cosf(phase);
+    bend = ((c > 0.0f) ? c : 0.0f) * 0x2600 * this->boWalkAmt + (0x300 * this->boWalkAmt);
+
+    switch (limbIndex) {
+        case 20:
+        case 23: // thigh: swings forward and back, lifting a little as the knee bends
+            rot->z += (s16)(BO_GDF_HIP_SIGN * (swing + (bend * 0.5f)));
+            break;
+        case 21:
+        case 24: // shin: the knee bends while the leg comes forward
+            rot->z += (s16)(BO_GDF_KNEE_SIGN * bend);
+            break;
+        case 22:
+        case 25: // foot: stays roughly flat
+            rot->z += (s16)(BO_GDF_HIP_SIGN * -(swing - (bend * 0.5f)));
+            break;
+    }
+}
+
+// Draws Ganon's sword in Ganondorf's right hand, along the blade direction worked out in BossGanon_BoUpdateBlade.
+static void BossGanon_BoDrawSword(BossGanon* this, PlayState* play) {
+    f32 scale;
+    s16 yaw;
+    s16 pitch;
+
+    if (this->boSword <= 0.01f) {
+        return;
+    }
+
+    OPEN_DISPS(play->state.gfxCtx);
+    Matrix_Push();
+
+    scale = BO_GDF_SWORD_SCALE * this->boSword;
+    yaw = Math_Atan2S(this->boBladeDir.z, this->boBladeDir.x);
+    pitch = Math_Atan2S(sqrtf(SQ(this->boBladeDir.x) + SQ(this->boBladeDir.z)), this->boBladeDir.y);
+
+    Matrix_Translate(this->boHand.x, this->boHand.y, this->boHand.z, MTXMODE_NEW);
+    Matrix_RotateY(yaw * (M_PI / 0x8000), MTXMODE_APPLY);
+    Matrix_RotateX(-pitch * (M_PI / 0x8000), MTXMODE_APPLY);
+    Matrix_Scale(scale, scale, scale, MTXMODE_APPLY);
+
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, gGanonRightSwordDL);
+
+    Matrix_Pop();
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 void BossGanon_SetupWait(BossGanon* this, PlayState* play) {
     BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME1);
     Animation_MorphToLoop(&this->skelAnime, &gGanondorfFloatAnim, -10.0f);
@@ -2286,6 +3062,12 @@ void BossGanon_Wait(BossGanon* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
 
     this->legSwayEnabled = true;
+
+    // Boss Overhaul: from two thirds of his health he fights with Ganon's sword
+    if (BO_GDF_SWORD_ON() && (BossGanon_BoPhase(this) >= 1) && !(player->actor.world.pos.y < 0.0f)) {
+        BossGanon_BoSetupSwordFight(this, play);
+        return;
+    }
 
     sCape->backPush = -3.0f;
     sCape->backSwayMagnitude = 0.25f;
@@ -2320,8 +3102,9 @@ void BossGanon_Wait(BossGanon* this, PlayState* play) {
         }
     }
 
-    sin = Math_SinS(this->unk_1A2 * 1280) * 100.0f;
-    cos = Math_CosS(this->unk_1A2 * 1792) * 100.0f;
+    // Boss Overhaul: he flies around the whole room instead of hovering near the middle
+    sin = Math_SinS(this->unk_1A2 * 1280) * (BO_GDF_SWORD_ON() ? 165.0f : 100.0f);
+    cos = Math_CosS(this->unk_1A2 * 1792) * (BO_GDF_SWORD_ON() ? 165.0f : 100.0f);
 
     Math_ApproachF(&this->actor.world.pos.x, sin, 0.05f, this->fwork[GDF_FWORK_0]);
     Math_ApproachF(&this->actor.world.pos.y, 150.0f, 0.05f, this->fwork[GDF_FWORK_0] * 0.2f);
@@ -2788,14 +3571,16 @@ void BossGanon_UpdateDamage(BossGanon* this, PlayState* play) {
         this->collider.base.acFlags &= ~2;
         acHitInfo = this->collider.info.acHitInfo;
 
-        if ((this->actionFunc == BossGanon_HitByLightBall) || (this->actionFunc == BossGanon_ChargeBigMagic)) {
+        if ((this->actionFunc == BossGanon_HitByLightBall) || (this->actionFunc == BossGanon_ChargeBigMagic) ||
+            ((this->actionFunc == BossGanon_BoSword) && (acHitInfo->toucher.dmgFlags & 0x2000))) {
+            // Boss Overhaul: during the sword fight a Light Arrow knocks him down at any time
             if (acHitInfo->toucher.dmgFlags & 0x2000) {
                 BossGanon_SetupVulnerable(this, play);
                 this->timers[2] = 0;
                 Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DAMAGE1);
                 this->unk_1A6 = 15;
             }
-        } else if ((this->actionFunc == BossGanon_Vulnerable) && (this->unk_1C2 >= 3)) {
+        } else if (((this->actionFunc == BossGanon_Vulnerable) && (this->unk_1C2 >= 3)) || BossGanon_BoIsOpen(this)) {
             if (!(acHitInfo->toucher.dmgFlags & 0x80)) {
                 u8 hitWithSword = false;
                 u8 damage;
@@ -2837,6 +3622,13 @@ void BossGanon_UpdateDamage(BossGanon* this, PlayState* play) {
                     Audio_QueueSeqCmd(0x100100FF);
                     this->screenFlashTimer = 4;
                     GameInteractor_ExecuteOnBossDefeat(&this->actor);
+                } else if (BossGanon_BoIsOpen(this)) {
+                    // Boss Overhaul: hit while his blade is stuck; he stays there until he tears it free
+                    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DAMAGE2);
+                    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_CUTBODY);
+                    this->boStuckHits++;
+                    this->unk_1A6 = 15;
+                    sCape->tearTimer = 1;
                 } else {
                     Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DAMAGE2);
                     Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_CUTBODY);
@@ -2935,6 +3727,7 @@ void BossGanon_Update(Actor* thisx, PlayState* play2) {
     }
 
     this->actionFunc(this, play);
+    BossGanon_BoUpdateSword(this);
 
     for (i = 0; i < ARRAY_COUNT(this->timers); i++) {
         if (this->timers[i] != 0) {
@@ -2971,7 +3764,7 @@ void BossGanon_Update(Actor* thisx, PlayState* play2) {
             CollisionCheck_SetAC(play, &play->colChkCtx, &this->collider.base);
 
             if ((this->actionFunc != BossGanon_HitByLightBall) && (this->actionFunc != BossGanon_Vulnerable) &&
-                (this->actionFunc != BossGanon_Damaged)) {
+                (this->actionFunc != BossGanon_Damaged) && !BossGanon_BoIsOpen(this)) {
                 CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
             }
         }
@@ -3288,6 +4081,8 @@ void BossGanon_Update(Actor* thisx, PlayState* play2) {
 s32 BossGanon_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot, void* thisx) {
     BossGanon* this = (BossGanon*)thisx;
 
+    BossGanon_BoWalkLimbs(this, limbIndex, rot);
+
     switch (limbIndex) {
         case 10:
             if (this->useOpenHand) {
@@ -3351,6 +4146,20 @@ void BossGanon_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* 
     bodyPart = bodyPartLimbMap[limbIndex];
     if (bodyPart >= 0) {
         Matrix_MultVec3f(&D_808E4DB8, &this->unk_2EC[bodyPart]);
+    }
+
+    // Boss Overhaul: right forearm and hand for the sword, feet for standing on the floor
+    if (limbIndex == 9) {
+        Matrix_MultVec3f(&D_808E4DB8, &this->boElbow);
+    } else if (limbIndex == 10) {
+        Matrix_MultVec3f(&D_808E4DB8, &this->boHand);
+    } else if ((limbIndex == 22) || (limbIndex == 25)) {
+        Vec3f foot;
+
+        Matrix_MultVec3f(&D_808E4DB8, &foot);
+        if (foot.y < this->boFootY) {
+            this->boFootY = foot.y;
+        }
     }
 
     if (limbIndex == 2) {
@@ -3899,13 +4708,17 @@ void BossGanon_Draw(Actor* thisx, PlayState* play) {
 
     gSPSegment(POLY_XLU_DISP++, 0x08, SEGMENTED_TO_VIRTUAL(gGanondorfNormalEyeTex));
 
+    this->boFootY = 100000.0f;
     SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, BossGanon_OverrideLimbDraw, BossGanon_PostLimbDraw, &this->actor);
+    this->boFootValid = (this->boFootY < 99999.0f);
 
     this->unk_2EC[0].x = this->unk_2EC[1].x;
     this->unk_2EC[0].y = this->unk_2EC[1].y + 30.0f;
     this->unk_2EC[0].z = this->unk_2EC[1].z;
 
     POLY_OPA_DISP = Play_SetFog(play, POLY_OPA_DISP);
+
+    BossGanon_BoDrawSword(this, play);
 
     BossGanon_DrawEffects(play);
 

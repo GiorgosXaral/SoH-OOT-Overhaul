@@ -1573,6 +1573,28 @@ void SohMenu::AddMenuEnhancements() {
             "All main bosses (Gohma through Ganon) gain additional attacks, and become more aggressive once "
             "they are badly hurt.\n\n"
             "Takes effect the next time a boss fight starts."));
+    AddWidget(path, "Ganondorf: The King's Blade", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("BossOverhaul.GanondorfSword"))
+        .PreFunc([](WidgetInfo& info) {
+            info.options->disabled = !CVarGetInteger(CVAR_ENHANCEMENT("BossOverhaul.ExtraAttacks"), 1);
+            info.options->disabledTooltip = "Needs \"Boss Overhaul: Extra Attacks\".";
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "From two thirds of his health Ganondorf lands, draws one of Ganon's swords and fights on foot: he "
+            "walks after you, leaps into overhead slams, sweeps and lunges, then takes off to fly around the room "
+            "firing dark magic and dive-slashes back down. Below one third he is enraged and adds lightning.\n\n"
+            "A slam or dive that misses leaves the blade stuck in the floor: that's your opening. A Light Arrow "
+            "still knocks him down at any time. A raised shield blocks his sweeps and lunges, but not his slams."));
+    AddWidget(path, "Ganon: New Attacks", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("BossOverhaul.GanonNewAttacks"))
+        .PreFunc([](WidgetInfo& info) {
+            info.options->disabled = !CVarGetInteger(CVAR_ENHANCEMENT("BossOverhaul.ExtraAttacks"), 1);
+            info.options->disabledTooltip = "Needs \"Boss Overhaul: Extra Attacks\".";
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Ganon throws one of his swords like a boomerang, slashes waves of fire along the floor, lashes his "
+            "tail at you if you stay behind him too long (jump it), and roars you away if you linger in front of "
+            "him. He picks attacks by where you stand and doesn't repeat the same one twice in a row."));
     AddWidget(path, "Miniboss & Enemy Overhaul", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, "Minibosses: Double HP", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("EnemyOverhaul.MinibossHP"))

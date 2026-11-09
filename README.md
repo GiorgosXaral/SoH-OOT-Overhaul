@@ -19,7 +19,7 @@ This is a fan project and is not affiliated with HarbourMasters. You still need 
 - Jump attacks and spin attacks are unchanged.
 
 ### Boss Overhaul
-*Enhancements → Difficulty → Enemies* - two switches: **Double HP** and **Extra Attacks**
+*Enhancements → Difficulty → Enemies* - two switches, **Double HP** and **Extra Attacks**, plus one each for Ganondorf's and Ganon's new fights
 
 Every main boss has twice the health, learns new attacks, and becomes more aggressive ("enraged") once badly hurt. Changes take effect the next time a boss fight starts.
 
@@ -33,8 +33,33 @@ Every main boss has twice the health, learns new attacks, and becomes more aggre
 | **Morpha** | 20 → 40 hits | Much less downtime between tentacle attacks, faster swing windup, second tentacle after 2 hits instead of 3, faster core. Enraged: every so often the core abandons its pattern and lunges straight at you. |
 | **Bongo Bongo** | 36 → 72 hits | Each slam sends a second shockwave, sweeps and claps are faster, and both hands often attack together. Claps become much more frequent as the fight goes on. |
 | **Twinrova** | 24 → 48 hits | The sisters need twice as many reflected blasts before merging and fire more often. Merged, she flies and fires faster, recovers sooner, and mixes blast types much earlier. Enraged: chains a second blast immediately. |
-| **Ganondorf** | 40 → 80 hits | **Dark storm:** he blinks across the room, throws a fan of five homing magic balls, then calls down three bolts of lightning (four in the second half). Dark motes mark each bolt's landing spot, so keep moving. The tennis rally is no longer all there is. |
-| **Ganon** | 30 → 60 hits, then 25 → 50 after he gets back up | Walks faster and fights like the beast in *A Link to the Past*: **leaps** across the arena and lands with a ring of fire; **charges** with both swords (sidestep and he gets stuck in the wall, opening his tail); and **sweeps** the floor with a ring of flame that has one gap to escape through. Enraged: swings 25% faster and adds extra swings to his combo. |
+| **Ganondorf** | 40 → 80 hits | Flies around the whole room between volleys, pounds the floor more often (twice in a row when hurt), throws a wider fan of magic, and the light ball speeds up with every return. From two thirds of his health he fights with a sword: see **The King's Blade** below. |
+| **Ganon** | 30 → 60 hits, then 25 → 50 after he gets back up | Throws his magic or breathes fire when you're out of reach of his swords, walks faster, and adds extra swings to his combos when enraged. New attacks: see **Ganon's new attacks** below. |
+
+#### Ganondorf: The King's Blade
+*Its own switch, "Ganondorf: The King's Blade", under Boss Overhaul*
+
+Once he's down to two thirds of his health, Ganondorf lands, raises his hand and draws one of Ganon's great swords out of the dark (the beast's own sword, shrunk to fit him). From then on:
+
+- **On foot:** he walks after you and attacks:
+  - **Leaping slam:** he jumps, drifts over you and drives the sword into the floor, sending out a dark shockwave you have to jump.
+  - **Sweeps:** wide horizontal slashes, up to three in a row when enraged.
+  - **Lunge:** he winds up and dashes at you blade-first.
+- **In the air:** after a few attacks, or if you keep your distance, he sheathes the sword in shadow and flies around the room firing fans of dark magic. Sometimes he starts the original light-ball rally or his big magic charge. Then he climbs above you and **dive-slashes** down.
+- **Enraged (below one third):** he's faster, chains longer combos, and calls down lightning around you while he flies. Dark dust marks where each bolt will land.
+- **Your openings:** a slam or dive that misses leaves his blade **stuck in the floor**. Hit him with your sword then: two or three hits and he tears it free, throwing out a small shockwave. A **Light Arrow** still knocks him down at any time, on foot or in the air.
+- **Shield:** a raised shield blocks his sweeps and lunges. It can't stop a slam or a dive.
+
+There are no new animations: his walk is made in code by moving his leg joints over his standing pose, and his swings reuse his own throwing, volleying and pounding animations with the sword in hand.
+
+#### Ganon's new attacks
+*Its own switch, "Ganon: New Attacks", under Boss Overhaul*
+
+- **Sword throw:** he hurls his right sword. It spins out like a boomerang and flies back to his hand.
+- **Fire slash:** he slashes the floor and a wave of flame races at you (three waves when enraged). Jump or sidestep.
+- **Tail sweep:** stay behind him too long and he lashes his tail across the floor behind him. Watch for the growl and the tail cocking, then jump. While he's stunned by a Light Arrow, his tail is safe to attack as before.
+- **Roar:** linger right in front of him and he roars, blasting you back.
+- **Smarter choices:** he picks his attack by where you are and how long you've been there, and never uses the same special attack twice in a row.
 
 ### Miniboss & Enemy Overhaul
 *Enhancements → Difficulty → Enemies*
