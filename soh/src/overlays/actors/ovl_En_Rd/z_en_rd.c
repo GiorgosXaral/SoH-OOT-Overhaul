@@ -3,6 +3,7 @@
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/ResourceManagerHelpers.h"
 #include "enemy_overhaul.h"
+#include <libultraship/bridge/consolevariablebridge.h>
 
 // Miniboss & Enemy Overhaul
 #define EO_RD_IS_GIBDO(this) ((this)->actor.params <= -2)

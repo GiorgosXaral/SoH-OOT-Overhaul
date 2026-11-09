@@ -1,5 +1,8 @@
 #include "StoryProgress.h"
 
+#include <libultraship/bridge/consolevariablebridge.h>
+#include "soh/Enhancements/game-interactor/GameInteractor.h"
+
 extern "C" {
 #include "z64.h"
 #include "macros.h"

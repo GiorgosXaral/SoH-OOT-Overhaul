@@ -6,6 +6,7 @@
 #include <vector>
 
 #include <imgui.h>
+#include <fast/Fast3dGui.h>
 #include "soh/cvar_prefixes.h"
 #include "soh/SohGui/ImGuiUtils.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
@@ -58,7 +59,7 @@ static void DrawIconRow(const std::vector<TapestryIcon>& icons, bool revealAll) 
         if (i > 0) {
             ImGui::SameLine();
         }
-        ImGui::Image(Ship::Context::GetInstance()->GetWindow()->GetGui()->GetTextureByName(
+        ImGui::Image(std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui())->GetTextureByName(
                          icon.owned ? icon.texture : icon.textureFaded),
                      ImVec2(size, size));
         if (ImGui::IsItemHovered()) {
@@ -330,7 +331,7 @@ void ThreadsOfTimeWindow::DrawElement() {
     bool revealAll = CVarGetInteger(TOT_CVAR_WHOLE_ROAD, 0) != 0;
     if (ImGui::Checkbox("Show the whole road", &revealAll)) {
         CVarSetInteger(TOT_CVAR_WHOLE_ROAD, revealAll ? 1 : 0);
-        Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+        Ship::Context::GetRawInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
     }
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Reveal the names of every milestone still ahead (spoilers).");

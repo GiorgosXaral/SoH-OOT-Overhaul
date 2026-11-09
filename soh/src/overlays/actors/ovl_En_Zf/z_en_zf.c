@@ -9,6 +9,7 @@
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/ResourceManagerHelpers.h"
 #include "enemy_overhaul.h"
+#include "soh/Enhancements/savestate_serialize.h"
 
 // Miniboss & Enemy Overhaul: the Dodongo's Cavern pair are minibosses, the rest follow the regular enemy toggle
 #define EO_ZF_IS_MINIBOSS(this) ((this)->actor.params >= ENZF_TYPE_LIZALFOS_MINIBOSS_A)
