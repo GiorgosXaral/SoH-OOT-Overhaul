@@ -53,8 +53,8 @@ s32 Eo_HurtPlayer(PlayState* play, Actor* source, u8 damage, s16 yaw, f32 knockb
         return false;
     }
 
-    func_8002F698(play, source, knockback, yaw, knockback * 0.6f,
-                  shock ? PLAYER_KNOCKBACK_LARGE_SHOCK : PLAYER_KNOCKBACK_LARGE, damage);
+    Actor_SetPlayerKnockback(play, source, knockback, yaw, knockback * 0.6f,
+                  shock ? PLAYER_KNOCKBACK_LARGE_ELECTRIFIED : PLAYER_KNOCKBACK_LARGE, damage);
     return true;
 }
 

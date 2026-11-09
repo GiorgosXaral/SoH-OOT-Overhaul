@@ -1,9 +1,34 @@
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/ShipInit.hpp"
+#include "soh/ActorDB.h"
 
 extern "C" {
 #include "functions.h"
 #include "enemy_overhaul.h"
+#include "src/overlays/actors/ovl_En_Eo_Shot/z_en_eo_shot.h"
+}
+
+// Adds the overhaul's shot actor (projectiles, ground waves, shockwave rings, thrown weapons, falling rocks) to the
+// actor list the first time one is needed, the same way Ivan is added.
+extern "C" void EnEoShot_Register(void) {
+    if (gEnEoShotId >= 0) {
+        return;
+    }
+    ActorDBInit entry = {
+        "En_Eo_Shot",
+        "Enemy Overhaul Shot",
+        -1,
+        ACTORCAT_MISC,
+        (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED),
+        OBJECT_GAMEPLAY_KEEP,
+        sizeof(EnEoShot),
+        (ActorFunc)EnEoShot_Init,
+        (ActorFunc)EnEoShot_Destroy,
+        (ActorFunc)EnEoShot_Update,
+        (ActorFunc)EnEoShot_Draw,
+        nullptr,
+    };
+    gEnEoShotId = ActorDB::Instance->AddEntry(entry).entry.id;
 }
 
 // Miniboss & Enemy Overhaul: hooks. The mechanics themselves live in the actors, z_enemy_overhaul.c and

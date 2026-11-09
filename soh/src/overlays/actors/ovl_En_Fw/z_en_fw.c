@@ -86,7 +86,7 @@ static AnimationInfo sAnimationInfo[] = {
 s32 EnFw_DoBounce(EnFw* this, s32 totalBounces, f32 yVelocity) {
     s16 temp_v1;
 
-    if (!(this->actor.bgCheckFlags & 1) || (this->actor.velocity.y > 0.0f)) {
+    if (!(this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) || (this->actor.velocity.y > 0.0f)) {
         // not on the ground or moving upwards.
         return false;
     }
@@ -211,8 +211,6 @@ void EnFw_Init(Actor* thisx, PlayState* play) {
 void EnFw_Destroy(Actor* thisx, PlayState* play) {
     EnFw* this = (EnFw*)thisx;
     Collider_DestroyJntSph(play, &this->collider);
-
-    ResourceMgr_UnregisterSkeleton(&this->skelAnime);
 }
 
 void EnFw_Bounce(EnFw* this, PlayState* play) {
@@ -274,7 +272,7 @@ void EnFw_Run(EnFw* this, PlayState* play) {
             return;
         }
     } else {
-        if (!(this->actor.bgCheckFlags & 1) || this->actor.velocity.y > 0.0f) {
+        if (!(this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) || this->actor.velocity.y > 0.0f) {
             Actor_SetColorFilter(&this->actor, 0x4000, 0xC8, 0, this->damageTimer);
             return;
         }

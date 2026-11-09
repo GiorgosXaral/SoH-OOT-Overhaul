@@ -10,6 +10,7 @@
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/ResourceManagerHelpers.h"
 #include "enemy_overhaul.h"
+#include <libultraship/bridge/consolevariablebridge.h>
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -253,8 +254,6 @@ void EnAm_Destroy(Actor* thisx, PlayState* play) {
     Collider_DestroyCylinder(play, &this->hurtCollider);
     Collider_DestroyCylinder(play, &this->blockCollider);
     //! @bug Quad collider is not destroyed (though destroy doesnt really do anything anyway)
-
-    ResourceMgr_UnregisterSkeleton(&this->skelAnime);
 }
 
 void EnAm_SpawnEffects(EnAm* this, PlayState* play) {

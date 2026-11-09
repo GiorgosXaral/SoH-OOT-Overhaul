@@ -88,6 +88,7 @@ struct EnEoShot;
 
 // Actor id of the shot, set when the ActorDB registers it.
 extern s16 gEnEoShotId;
+void EnEoShot_Register(void);
 
 // Number of live shots of `mode` fired by `owner`.
 s32 EoShot_CountOwned(Actor* owner, s32 mode);

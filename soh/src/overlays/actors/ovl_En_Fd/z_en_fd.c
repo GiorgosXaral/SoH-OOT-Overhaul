@@ -233,7 +233,7 @@ s32 EnFd_SpawnCore(EnFd* this, PlayState* play) {
     }
 
     if (CHECK_FLAG_ALL(this->actor.flags, ACTOR_FLAG_HOOKSHOT_ATTACHED)) {
-        func_8002DE04(play, &this->actor, this->actor.child);
+        Actor_SwapHookshotAttachment(play, &this->actor, this->actor.child);
     }
 
     this->coreActive = true;
@@ -314,7 +314,8 @@ s32 EnFd_ColliderCheck(EnFd* this, PlayState* play) {
         }
         this->attackTimer = 30;
         Audio_PlayActorSound2(&player->actor, NA_SE_PL_BODY_HIT);
-        func_8002F71C(play, &this->actor, this->actor.speedXZ + 2.0f, this->actor.yawTowardsPlayer, 6.0f);
+        Actor_SetPlayerKnockbackLargeNoDamage(play, &this->actor, this->actor.speedXZ + 2.0f,
+                                              this->actor.yawTowardsPlayer, 6.0f);
     }
     return false;
 }
@@ -477,8 +478,6 @@ void EnFd_Destroy(Actor* thisx, PlayState* play) {
     EnFd* this = (EnFd*)thisx;
 
     Collider_DestroyJntSph(play, &this->collider);
-
-    ResourceMgr_UnregisterSkeleton(&this->skelAnime);
 }
 
 void EnFd_Reappear(EnFd* this, PlayState* play) {
@@ -543,9 +542,9 @@ void EnFd_SpinAndSpawnFire(EnFd* this, PlayState* play) {
     f32 rotSpeed;
 
     if ((this->spinTimer < 31) && (this->invincibilityTimer == 0)) {
-        func_8002F974(&this->actor, NA_SE_EN_FLAME_FIRE_ATTACK - SFX_FLAG);
+        Actor_PlaySfx_Flagged(&this->actor, NA_SE_EN_FLAME_FIRE_ATTACK - SFX_FLAG);
     } else {
-        func_8002F974(&this->actor, NA_SE_EN_FLAME_ROLL - SFX_FLAG);
+        Actor_PlaySfx_Flagged(&this->actor, NA_SE_EN_FLAME_ROLL - SFX_FLAG);
     }
 
     if (DECR(this->spinTimer) != 0) {
@@ -634,7 +633,7 @@ void EnFd_Run(EnFd* this, PlayState* play) {
     EnFd_GetPosAdjAroundCircle(&adjPos, this, this->runRadius, this->runDir);
     Math_SmoothStepToS(&this->actor.shape.rot.y, Math_FAtan2F(adjPos.x, adjPos.z) * (0x8000 / M_PI), 4, 0xFA0, 1);
     this->actor.world.rot = this->actor.shape.rot;
-    func_8002F974(&this->actor, NA_SE_EN_FLAME_RUN - SFX_FLAG);
+    Actor_PlaySfx_Flagged(&this->actor, NA_SE_EN_FLAME_RUN - SFX_FLAG);
     if (this->skelAnime.curFrame == 6.0f || this->skelAnime.curFrame == 13.0f || this->skelAnime.curFrame == 28.0f) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_FLAME_KICK);
     }

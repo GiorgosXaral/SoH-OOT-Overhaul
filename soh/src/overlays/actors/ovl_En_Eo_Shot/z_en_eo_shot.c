@@ -137,7 +137,11 @@ static EnEoShot* EoShot_Spawn(PlayState* play, Actor* owner, s32 mode, s32 kind,
     EnEoShot* shot;
     EoKindInfo* info;
 
-    if ((play == NULL) || (pos == NULL) || (gEnEoShotId < 0)) {
+    if ((play == NULL) || (pos == NULL)) {
+        return NULL;
+    }
+    EnEoShot_Register();
+    if (gEnEoShotId < 0) {
         return NULL;
     }
 
@@ -613,7 +617,7 @@ static void EoShot_UpdateGroundWave(EnEoShot* this, PlayState* play) {
     }
 
     if (this->look == EO_LOOK_FIRE) {
-        func_8002F974(actor, NA_SE_EV_BURN_OUT - SFX_FLAG);
+        Actor_PlaySfx_Flagged(actor, NA_SE_EV_BURN_OUT - SFX_FLAG);
     }
 
     Collider_UpdateCylinder(actor, &this->collider);
@@ -678,7 +682,7 @@ static void EoShot_UpdateBoomerang(EnEoShot* this, PlayState* play) {
 
     this->timer++;
     this->spin += this->spinStep;
-    func_8002F974(actor, NA_SE_IT_BOOMERANG_FLY - SFX_FLAG);
+    Actor_PlaySfx_Flagged(actor, NA_SE_IT_BOOMERANG_FLY - SFX_FLAG);
 
     if ((this->timer < 34) && (this->owner != NULL)) {
         // Out: slowing down, curving a little towards Link

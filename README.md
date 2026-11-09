@@ -1,6 +1,6 @@
 # SoH-OOT-Overhaul
 
-A modified version of [Ship of Harkinian](https://github.com/HarbourMasters/Shipwright) 9.2.3 (Ackbar Delta), the PC port of *The Legend of Zelda: Ocarina of Time*, with tougher and smarter bosses and enemies, an A Link to the Past style Master Sword beam, and better Epona controls.
+A modified version of [Ship of Harkinian](https://github.com/HarbourMasters/Shipwright) 9.3.1 (Dewey), the PC port of *The Legend of Zelda: Ocarina of Time*, with tougher and smarter bosses and enemies, an A Link to the Past style Master Sword beam, and better Epona controls.
 
 Every change can be switched on or off in the in-game menu (press **ESC**). All of them are **on by default**; turning one off gives you the original behavior back.
 
@@ -157,7 +157,7 @@ You need your own copy of Ocarina of Time. Check that your ROM dump is supported
 - Unzip the download into its own folder.
 - Run `soh.exe` and select your ROM when asked. On first launch the game builds `oot.o2r` from your ROM; after that it starts straight away.
 
-**Coming from Ship of Harkinian 9.2.3?** Copy the `Save` folder and `shipofharkinian.json` from your old folder into the new one to keep your saves and settings.
+**Coming from Ship of Harkinian 9.2.3 or 9.3.x?** Copy the `Save` folder and `shipofharkinian.json` from your old folder into the new one to keep your saves and settings.
 
 ---
 
