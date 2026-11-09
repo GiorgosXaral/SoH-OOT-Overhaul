@@ -10,10 +10,14 @@
 //   purple       - the Lens of Truth (fake walls, invisible paths and platforms, invisible chests)
 //   white        - invisible collectables
 
+#include <libultraship/bridge/consolevariablebridge.h>
+
+#include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/ShipInit.hpp"
 
 extern "C" {
+#include "z64.h"
 #include "macros.h"
 #include "variables.h"
 #include "functions.h"
