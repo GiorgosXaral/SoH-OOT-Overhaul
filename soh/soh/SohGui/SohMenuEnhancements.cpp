@@ -936,6 +936,31 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Assignable Shields, Tunics and Boots", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("AssignableTunicsAndBoots"))
         .Options(CheckboxOptions().Tooltip("Allows equipping Shields, Tunics and Boots to C-Buttons/D-pad."));
+    AddWidget(path, "Better Hover Boots", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("BetterHoverBoots"))
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "The Hover Boots lose their drawbacks:\n"
+            "- On the ground they handle like the Kokiri Boots: same grip, speed, turning and jumps, no sliding.\n"
+            "- Link hovers longer after leaving the ground (see below), refilled every time he lands.\n"
+            "- When the hover runs out he drifts down slowly with full steering instead of dropping, and takes no "
+            "fall damage.\n\n"
+            "You still don't sink in quicksand, and can still run across water and gaps."));
+    AddWidget(path, "Hover Time", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BetterHoverBoots.HoverTime"))
+        .PreFunc([](WidgetInfo& info) {
+            info.options->disabled = !CVarGetInteger(CVAR_ENHANCEMENT("BetterHoverBoots"), 1);
+            info.options->disabledTooltip = "Needs \"Better Hover Boots\".";
+        })
+        .Options(IntSliderOptions().Min(19).Max(200).DefaultValue(60).Format("%d frames").Tooltip(
+            "How long Link hovers after leaving the ground. 20 frames is one second; the original is 19."));
+    AddWidget(path, "Glide Fall Speed", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("BetterHoverBoots.GlideSpeed"))
+        .PreFunc([](WidgetInfo& info) {
+            info.options->disabled = !CVarGetInteger(CVAR_ENHANCEMENT("BetterHoverBoots"), 1);
+            info.options->disabledTooltip = "Needs \"Better Hover Boots\".";
+        })
+        .Options(FloatSliderOptions().Min(1.0f).Max(20.0f).DefaultValue(3.0f).Format("%.1f").Tooltip(
+            "How fast Link sinks once the hover has run out. Lower is a gentler glide; 20 is a normal fall."));
     // TODO: Revist strength toggle, it's currently separate but should probably be locked behind the
     // Equipment toggle settings or be absorbed by it completely.
     AddWidget(path, "Equipment Toggle", WIDGET_CVAR_CHECKBOX)

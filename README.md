@@ -171,6 +171,16 @@ A window that follows your journey, so you never need a walkthrough:
 
 It follows the original story, so the directions won't match a Randomizer save.
 
+### Better Hover Boots
+*Enhancements → Items → Better Hover Boots* (on by default)
+
+The Hover Boots lose their drawbacks:
+
+- **On the ground:** they handle like the Kokiri Boots, with the same grip, top speed, turning, rolls and jumps. No more sliding as if on ice.
+- **Longer hover:** about 3 seconds instead of 1 after leaving the ground, refilled every time you land. Adjustable with **Hover Time**.
+- **Gentle glide:** when the hover runs out, Link drifts down slowly with full steering instead of dropping like a stone, and takes no fall damage. Adjustable with **Glide Fall Speed**.
+- **Kept:** you still don't sink in quicksand, and can still run across water and gaps.
+
 ### Instant Text
 *Enhancements → Skips & Speed-ups*
 

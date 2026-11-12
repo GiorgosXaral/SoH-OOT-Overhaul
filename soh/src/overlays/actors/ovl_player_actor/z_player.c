@@ -278,6 +278,9 @@ void Player_Action_80843954(Player* this, PlayState* play);
 void Player_Action_80843A38(Player* this, PlayState* play);
 void Player_Action_80843CEC(Player* this, PlayState* play);
 void Player_Action_8084411C(Player* this, PlayState* play);
+static s32 BetterHover_Enabled(void);
+static s32 BetterHover_Frames(void);
+static s32 BetterHover_Gliding(Player* this);
 void Player_Action_Roll(Player* this, PlayState* play);
 void Player_Action_80844A44(Player* this, PlayState* play);
 void Player_Action_80844AF4(Player* this, PlayState* play);
@@ -9665,6 +9668,13 @@ void Player_Action_8084411C(Player* this, PlayState* play) {
 
         if (!(this->stateFlags2 & PLAYER_STATE2_HOPPING)) {
             func_8083DFE0(this, &sp4C, &sp4A);
+
+            // Better Hover Boots: full steering and speed while gliding down
+            if (BetterHover_Gliding(this)) {
+                Math_StepToF(&this->linearVelocity, sp4C, 1.5f);
+                Math_ScaledStepToS(&this->yaw, sp4A, 0x800);
+                this->actor.shape.rot.y = this->yaw;
+            }
         }
 
         Player_UpdateUpperBody(this, play);
@@ -11119,8 +11129,40 @@ void Player_UpdateInterface(PlayState* play, Player* this) {
  *
  * @return true if not on the ground, false otherwise. Note this is independent of the Hover Boots state.
  */
+// SoH-OOT-Overhaul: Better Hover Boots
+static s32 BetterHover_Enabled(void) {
+    return CVarGetInteger(CVAR_ENHANCEMENT("BetterHoverBoots"), 1) != 0;
+}
+
+// How long Link hovers after leaving the ground, in frames (vanilla: 19)
+static s32 BetterHover_Frames(void) {
+    return BetterHover_Enabled() ? CLAMP(CVarGetInteger(CVAR_ENHANCEMENT("BetterHoverBoots.HoverTime"), 60), 19, 200)
+                                 : 19;
+}
+
+// True while Link drifts down on Hover Boots after the hover has run out
+static s32 BetterHover_Gliding(Player* this) {
+    return BetterHover_Enabled() && (this->currentBoots == PLAYER_BOOTS_HOVER) && (this->hoverBootsTimer == 0) &&
+           !(this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) &&
+           !(this->stateFlags1 & (PLAYER_STATE1_IN_WATER | PLAYER_STATE1_ON_HORSE | PLAYER_STATE1_IN_CUTSCENE |
+                                  PLAYER_STATE1_HANGING_OFF_LEDGE | PLAYER_STATE1_CLIMBING_LEDGE |
+                                  PLAYER_STATE1_CLIMBING_LADDER | PLAYER_STATE1_HOOKSHOT_FALLING)) &&
+           (this->actor.yDistToWater < 0.0f);
+}
+
 s32 Player_UpdateHoverBoots(Player* this) {
     s32 canHoverOnGround;
+
+    // Better Hover Boots: once the hover runs out, Link drifts down slowly instead of dropping, and the drift
+    // doesn't count as a fall (no fall damage)
+    if (BetterHover_Gliding(this) && (this->actor.velocity.y < 0.0f)) {
+        f32 glide = CVarGetFloat(CVAR_ENHANCEMENT("BetterHoverBoots.GlideSpeed"), 3.0f);
+
+        if (this->actor.velocity.y < -glide) {
+            this->actor.velocity.y = -glide;
+        }
+        this->fallStartHeight = this->actor.world.pos.y;
+    }
 
     if ((this->currentBoots == PLAYER_BOOTS_HOVER) && (this->hoverBootsTimer != 0)) {
         this->hoverBootsTimer--;
@@ -11138,7 +11180,7 @@ s32 Player_UpdateHoverBoots(Player* this) {
 
     if (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) {
         if (!canHoverOnGround) {
-            this->hoverBootsTimer = 19;
+            this->hoverBootsTimer = BetterHover_Frames();
         }
         return false;
     } else {
@@ -11905,7 +11947,8 @@ void Player_UpdateCommon(Player* this, PlayState* play, Input* input) {
         if (!(this->skelAnime.movementFlags & 0x80)) {
             if (((this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) && (sFloorType == 5) &&
                  (this->currentBoots != PLAYER_BOOTS_IRON)) ||
-                ((this->currentBoots == PLAYER_BOOTS_HOVER || GameInteractor_GetSlipperyFloorActive()) &&
+                ((((this->currentBoots == PLAYER_BOOTS_HOVER) && !BetterHover_Enabled()) ||
+                  GameInteractor_GetSlipperyFloorActive()) &&
                  !(this->stateFlags1 & (PLAYER_STATE1_IN_WATER | PLAYER_STATE1_IN_CUTSCENE)))) {
                 f32 sp70 = this->linearVelocity;
                 s16 sp6E = this->yaw;
@@ -12397,9 +12440,10 @@ void Player_DrawGameplay(PlayState* play, Player* this, s32 lod, Gfx* cullDList,
     if ((this->currentBoots == PLAYER_BOOTS_HOVER) && !(this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) &&
         !(this->stateFlags1 & PLAYER_STATE1_ON_HORSE) && (this->hoverBootsTimer != 0)) {
         s32 sp5C;
-        s32 hoverBootsTimer = this->hoverBootsTimer;
+        // Better Hover Boots: the glow's fade is spread over the longer hover
+        s32 hoverBootsTimer = (this->hoverBootsTimer * 19) / BetterHover_Frames();
 
-        if (this->hoverBootsTimer < 19) {
+        if (hoverBootsTimer < 19) {
             if (hoverBootsTimer >= 15) {
                 D_8085486C = (19 - hoverBootsTimer) * 51.0f;
             } else if (hoverBootsTimer < 19) {

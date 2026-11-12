@@ -472,7 +472,12 @@ void Player_SetBootData(PlayState* play, Player* this) {
         REG(48) = 100;
     }
 
-    bootRegs = sBootData[currentBoots];
+    // SoH-OOT-Overhaul: Better Hover Boots handle like the Kokiri Boots on the ground (speed, grip, jumps)
+    if ((currentBoots == PLAYER_BOOTS_HOVER) && CVarGetInteger(CVAR_ENHANCEMENT("BetterHoverBoots"), 1)) {
+        bootRegs = sBootData[PLAYER_BOOTS_KOKIRI];
+    } else {
+        bootRegs = sBootData[currentBoots];
+    }
     REG(19) = bootRegs[0];
     REG(30) = bootRegs[1];
     REG(32) = bootRegs[2];
