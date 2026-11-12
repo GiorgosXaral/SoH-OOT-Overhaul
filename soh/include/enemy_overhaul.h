@@ -111,6 +111,8 @@ void EoShot_SetDamage(Actor* shot, u8 damage, u8 effect);
 typedef void (*EoShotReturnFunc)(Actor* owner, PlayState* play);
 // Lets Link hit an orb back at its owner with his sword (a shield just stops it). `onReturn` runs when it arrives.
 void EoShot_SetReflectable(Actor* shot, EoShotReturnFunc onReturn);
+// How close to the spot a falling orb hurts Link when it lands (default 70)
+void EoShot_SetImpactRadius(Actor* shot, f32 radius);
 
 // A wave racing along the floor from `pos` in direction `yaw`.
 Actor* EoShot_GroundWave(PlayState* play, Actor* owner, s32 look, Vec3f* pos, s16 yaw, f32 speed, s16 life,

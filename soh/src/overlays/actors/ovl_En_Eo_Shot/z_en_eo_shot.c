@@ -183,6 +183,12 @@ void EoShot_SetHoming(Actor* shot, s16 step) {
     }
 }
 
+void EoShot_SetImpactRadius(Actor* shot, f32 radius) {
+    if (shot != NULL) {
+        ((EnEoShot*)shot)->radius = radius;
+    }
+}
+
 void EoShot_SetReflectable(Actor* shot, EoShotReturnFunc onReturn) {
     EnEoShot* this = (EnEoShot*)shot;
 
@@ -840,7 +846,8 @@ static void EoShot_UpdateFalling(EnEoShot* this, PlayState* play) {
             SoundSource_PlaySfxAtFixedWorldPos(play, &actor->world.pos, 20, NA_SE_EV_ROCK_BROKEN);
         }
 
-        if ((dist < 70.0f) && (fabsf(player->actor.world.pos.y - this->target.y) < 80.0f)) {
+        if ((dist < ((this->radius > 0.0f) ? this->radius : 70.0f)) &&
+            (fabsf(player->actor.world.pos.y - this->target.y) < 80.0f)) {
             Eo_HurtPlayer(play, (this->owner != NULL) ? this->owner : actor, this->damage,
                           Math_Vec3f_Yaw(&this->target, &player->actor.world.pos), 6.0f, false, false);
         }

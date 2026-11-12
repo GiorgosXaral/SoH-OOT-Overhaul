@@ -47,8 +47,9 @@ Every main boss has twice the health, learns new attacks, and becomes more aggre
   - **Leaping slam:** he jumps, drifts over you and drives the sword into the floor, sending out a dark shockwave you jump. If you run, this is how he catches up.
   - **Sweeps:** wide slashes, up to three in a row when enraged.
   - **Lunge:** he winds up and dashes at you blade-first.
-- **In the air:** after a few attacks he sheathes the sword in shadow and flies around the room, firing fans of dark magic. He also mixes in the dark storm, the light-ball rally and his big magic charge, and dive-slashes back down.
+- **In the air:** after a few attacks he sheathes the sword in shadow and flies around the room, firing fans of dark magic. He also mixes in the dark storm, the light-ball rally and his big magic charge, and dive-slashes back down. Before a dive, dark motes mark the spot he will land on; he commits to that spot, so step out of it.
 - **Enraged (below one third):** faster, longer combos, and lightning around you while he flies.
+- **Area attacks are kept tight:** shockwaves, lightning strikes and the blade's reach are about half the size they first were, so every one of them can be dodged.
 - **Your openings:**
   - **Stuck blade:** a slam or dive that misses leaves his blade stuck in the floor. Hit him with your sword then: two or three hits and he tears it free with a small shockwave.
   - **Light Arrows:** they knock him down **only while he's in the air** (flying, casting, diving) **or his blade is stuck**. On foot he deflects them with the sword. After a knockdown he shrugs them off for about ten seconds once he's back up.

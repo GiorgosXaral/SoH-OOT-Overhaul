@@ -2510,7 +2510,7 @@ static void BossGanon_BoSwordHit(BossGanon* this, PlayState* play, u8 damage, s3
     t = CLAMP(t, 0.0f, 1.0f);
     distSq = SQ(rel.x - (seg.x * t)) + SQ(rel.y - (seg.y * t)) + SQ(rel.z - (seg.z * t));
 
-    if (distSq > SQ(42.0f)) {
+    if (distSq > SQ(30.0f)) {
         return;
     }
 
@@ -2740,14 +2740,13 @@ static void BossGanon_BoSetState(BossGanon* this, PlayState* play, s16 state) {
 
         case BO_GS_DIVE_RISE:
             BossGanon_BoPlayOnce(this, &gGanondorfChargeLightBallAnim, 1.0f, -6.0f);
-            this->boTimer = (rage > 1.0f) ? 20 : 30;
+            this->boTimer = (rage > 1.0f) ? 30 : 36;
             this->boSwordTarget = 1.0f;
             Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DARKWAVE);
             break;
 
         case BO_GS_DIVE:
             BossGanon_BoPlayOnce(this, &gGanondorfPoundAnim, 1.0f, 0.0f);
-            this->boTarget = GET_PLAYER(play)->actor.world.pos;
             this->actor.velocity.y = 0.0f;
             Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_SWORD);
             break;
@@ -2884,19 +2883,20 @@ void BossGanon_BoSword(BossGanon* this, PlayState* play) {
         case BO_GS_SLAM_FALL:
         case BO_GS_DIVE:
             if (this->boState == BO_GS_DIVE) {
-                Math_ApproachF(&this->actor.world.pos.x, this->boTarget.x, 0.3f, 20.0f);
-                Math_ApproachF(&this->actor.world.pos.z, this->boTarget.z, 0.3f, 20.0f);
+                // Comes down on the spot that was marked, not wherever Link has moved to
+                Math_ApproachF(&this->actor.world.pos.x, this->boTarget.x, 0.3f, 12.0f);
+                Math_ApproachF(&this->actor.world.pos.z, this->boTarget.z, 0.3f, 12.0f);
                 BossGanon_BoClampToArena(this);
             }
             sCape->gravity = -1.0f;
-            Math_ApproachF(&this->actor.velocity.y, -45.0f, 1.0f, 8.0f);
+            Math_ApproachF(&this->actor.velocity.y, -30.0f, 1.0f, 4.0f);
             this->actor.world.pos.y += this->actor.velocity.y;
             BossGanon_BoSwordHit(this, play, enraged ? 0x28 : 0x20, true);
 
             if ((this->boFootValid && (this->boFootY <= (this->boFloorY + 2.0f))) ||
                 (this->actor.world.pos.y < (this->boFloorY + 55.0f))) {
                 BossGanon_BoStandOnFloor(this, 1000.0f);
-                BossGanon_BoImpact(this, play, (this->boState == BO_GS_DIVE) ? 420.0f : 320.0f);
+                BossGanon_BoImpact(this, play, (this->boState == BO_GS_DIVE) ? 210.0f : 160.0f);
                 if (this->boHitDone) {
                     BossGanon_BoSetState(this, play, BO_GS_RECOVER); // it connected: no opening
                 } else {
@@ -2917,7 +2917,7 @@ void BossGanon_BoSword(BossGanon* this, PlayState* play) {
                 pos = this->actor.world.pos;
                 pos.y = this->boFloorY;
                 // Tearing the blade out sends a small ring outwards: jump it
-                EoShot_Ring(play, &this->actor, EO_LOOK_DARK, &pos, 170.0f, 7.0f, 0x08);
+                EoShot_Ring(play, &this->actor, EO_LOOK_DARK, &pos, 85.0f, 7.0f, 0x08);
                 BossGanon_BoSetState(this, play, BO_GS_RECOVER);
             }
             break;
@@ -3025,7 +3025,8 @@ void BossGanon_BoSword(BossGanon* this, PlayState* play) {
                         pos = player->actor.world.pos;
                         pos.x += Rand_CenteredFloat(160.0f);
                         pos.z += Rand_CenteredFloat(160.0f);
-                        EoShot_FallingOrb(play, &this->actor, EO_KIND_SHOCK, &pos, 350.0f, 0x10);
+                        EoShot_SetImpactRadius(
+                            EoShot_FallingOrb(play, &this->actor, EO_KIND_SHOCK, &pos, 350.0f, 0x10), 35.0f);
                     }
                     Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_HIT_THUNDER);
                 }
@@ -3135,7 +3136,7 @@ void BossGanon_BoSword(BossGanon* this, PlayState* play) {
                     }
                     Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_HIT_THUNDER);
                     Actor_RequestQuakeAndRumble(&this->actor, play, 4, 8);
-                    EoShot_Ring(play, &this->actor, EO_LOOK_DARK, &this->boStormPos[i], 130.0f, 7.0f, 0x10);
+                    EoShot_Ring(play, &this->actor, EO_LOOK_DARK, &this->boStormPos[i], 65.0f, 7.0f, 0x10);
                 }
             }
             this->boTimer += 2; // cancels the countdown below
@@ -3152,12 +3153,24 @@ void BossGanon_BoSword(BossGanon* this, PlayState* play) {
 
         case BO_GS_DIVE_RISE:
             BossGanon_BoFace(this, 0x800);
-            Math_ApproachF(&this->actor.world.pos.x, player->actor.world.pos.x, 0.1f, 10.0f);
-            Math_ApproachF(&this->actor.world.pos.z, player->actor.world.pos.z, 0.1f, 10.0f);
-            BossGanon_BoClampToArena(this);
+            if (this->boTimer > 16) {
+                Math_ApproachF(&this->actor.world.pos.x, player->actor.world.pos.x, 0.1f, 10.0f);
+                Math_ApproachF(&this->actor.world.pos.z, player->actor.world.pos.z, 0.1f, 10.0f);
+                BossGanon_BoClampToArena(this);
+            }
             Math_ApproachF(&this->actor.world.pos.y, 260.0f, 0.1f, 8.0f);
             this->boBladeFwd = 0.0f;
             this->boBladeUp = 1.5f;
+            // The landing spot is chosen early and marked with dark motes, so the dive can be dodged
+            if (this->boTimer == 16) {
+                this->boTarget = player->actor.world.pos;
+            }
+            if ((this->boTimer < 16) && ((this->boTimer % 2) == 0)) {
+                pos = this->boTarget;
+                pos.x += Rand_CenteredFloat(40.0f);
+                pos.z += Rand_CenteredFloat(40.0f);
+                Eo_DarkPuff(play, &pos, 0.7f);
+            }
             if (this->boTimer == 0) {
                 BossGanon_BoSetState(this, play, BO_GS_DIVE);
             }
