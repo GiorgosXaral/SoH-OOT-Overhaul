@@ -186,6 +186,14 @@ typedef struct BossGanon {
     Vec3f boBladeDir;   // world direction of the blade
     Vec3f boTip;        // world position of the blade's tip
     Vec3f boTarget;     // where a leap, lunge or dive is aimed
+    u8 boArrowPending;  // knocked down by a Light Arrow: shrug them off for a while once he's back up
+    u8 boStormArmed;
+    s16 boArrowImmune;  // frames left during which Light Arrows don't knock him down
+    s16 boStormCooldown;
+    s16 boStormCount;   // lightning bolts in the current dark storm
+    s16 boFarTimer;     // frames Link has kept his distance
+    f32 boFloorY;       // floor under him (the tile height where tiles have fallen away)
+    Vec3f boStormPos[4];
 } BossGanon; // size = 0x71C (vanilla)
 
 #endif

@@ -35,6 +35,9 @@ typedef struct EnEoShot {
     Vec3f target; // falling: landing spot
     Gfx* dList;   // boomerang / falling model
     f32 dListScale;
+    u8 reflectable;             // orbs: Link's sword can send it back
+    u8 reflected;               // on its way back to its owner
+    EoShotReturnFunc onReturn;  // called when a sent-back orb reaches its owner
 } EnEoShot;
 
 #ifdef __cplusplus

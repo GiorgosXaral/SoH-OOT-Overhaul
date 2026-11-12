@@ -183,6 +183,20 @@ void EoShot_SetHoming(Actor* shot, s16 step) {
     }
 }
 
+void EoShot_SetReflectable(Actor* shot, EoShotReturnFunc onReturn) {
+    EnEoShot* this = (EnEoShot*)shot;
+
+    if (this == NULL) {
+        return;
+    }
+    this->reflectable = true;
+    this->onReturn = onReturn;
+    // Sword attacks (and the shield, which only stops it) can now touch it, like Ganondorf's light ball
+    this->collider.base.acFlags = AC_ON | AC_TYPE_PLAYER;
+    this->collider.info.bumperFlags = BUMP_ON;
+    this->collider.info.bumper.dmgFlags = 0x0D900740 | 0x00100000;
+}
+
 void EoShot_SetDamage(Actor* shot, u8 damage, u8 effect) {
     if (shot != NULL) {
         ((EnEoShot*)shot)->collider.info.toucher.damage = damage;
@@ -548,6 +562,56 @@ static void EoShot_UpdateOrb(EnEoShot* this, PlayState* play) {
     CollisionPoly* poly;
     s32 bgId;
 
+    // Sent back by Link's sword: it flies at its owner, and no longer hurts Link
+    if (this->reflected) {
+        if ((this->owner == NULL) || (this->timer > 90)) {
+            this->life = 0;
+        } else {
+            Vec3f home = this->owner->focus.pos;
+
+            EoShot_AimVelocity(&actor->world.pos, &home, this->speed, 0, &actor->velocity);
+            if (Math_Vec3f_DistXYZ(&actor->world.pos, &home) < 55.0f) {
+                if (this->onReturn != NULL) {
+                    this->onReturn(this->owner, play);
+                }
+                this->life = 0;
+            }
+        }
+        actor->world.pos.x += actor->velocity.x;
+        actor->world.pos.y += actor->velocity.y;
+        actor->world.pos.z += actor->velocity.z;
+        if ((this->timer % 2) == 0) {
+            EoShot_Trail(play, this);
+        }
+        if (this->life <= 0) {
+            EoShot_Burst(play, this);
+            Actor_Kill(actor);
+        }
+        return;
+    }
+
+    if (this->reflectable && (this->collider.base.acFlags & AC_HIT)) {
+        ColliderInfo* acHitInfo = this->collider.info.acHitInfo;
+        Player* player = GET_PLAYER(play);
+
+        this->collider.base.acFlags &= ~AC_HIT;
+        if ((acHitInfo != NULL) && (acHitInfo->toucher.dmgFlags & 0x00100000)) {
+            // Blocked by the shield
+            Audio_PlaySfxGeneral(NA_SE_IT_SHIELD_REFLECT_MG, &player->actor.projectedPos, 4,
+                                 &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            this->life = 0;
+        } else {
+            // Hit back with the sword
+            Audio_PlaySfxGeneral(NA_SE_IT_SWORD_REFLECT_MG, &player->actor.projectedPos, 4,
+                                 &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            this->reflected = true;
+            this->timer = 0;
+            this->speed = MAX(sqrtf(SQ(actor->velocity.x) + SQ(actor->velocity.y) + SQ(actor->velocity.z)), 10.0f) *
+                          1.3f;
+            return;
+        }
+    }
+
     if ((this->homing != 0) && Eo_CanAttack(play)) {
         Vec3f target;
         f32 speedXZ = sqrtf(SQ(actor->velocity.x) + SQ(actor->velocity.z));
@@ -590,6 +654,9 @@ static void EoShot_UpdateOrb(EnEoShot* this, PlayState* play) {
     }
     this->life--;
     CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
+    if (this->reflectable) {
+        CollisionCheck_SetAC(play, &play->colChkCtx, &this->collider.base);
+    }
 }
 
 static void EoShot_UpdateGroundWave(EnEoShot* this, PlayState* play) {
@@ -692,7 +759,8 @@ static void EoShot_UpdateBoomerang(EnEoShot* this, PlayState* play) {
         this->speed *= 0.95f;
         actor->velocity.x = Math_SinS(actor->world.rot.y) * this->speed;
         actor->velocity.z = Math_CosS(actor->world.rot.y) * this->speed;
-        actor->velocity.y = 0.0f;
+        // Comes down to Link's chest height, however high it was thrown from
+        actor->velocity.y = CLAMP((player->actor.world.pos.y + 35.0f - actor->world.pos.y) * 0.2f, -6.0f, 6.0f);
     } else if (this->owner != NULL) {
         // Back to its owner's hand
         Vec3f home = this->owner->focus.pos;

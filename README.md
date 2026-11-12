@@ -39,27 +39,39 @@ Every main boss has twice the health, learns new attacks, and becomes more aggre
 #### Ganondorf: The King's Blade
 *Its own switch, "Ganondorf: The King's Blade", under Boss Overhaul*
 
-Once he's down to two thirds of his health, Ganondorf lands, raises his hand and draws one of Ganon's great swords out of the dark (the beast's own sword, shrunk to fit him). From then on:
+**Dark storm (the whole fight):** now and then Ganondorf gathers magic and blinks to the far side of the room in a burst of dark motes. He throws a fan of five homing magic balls, then calls three bolts of lightning down on you (four in the second half of the fight). Dark motes mark each bolt's spot for about twenty frames, so keep moving. The shockwave a bolt leaves is the part that hurts. While he's casting it he's in the air, so a Light Arrow can bring him down.
 
-- **On foot:** he walks after you and attacks:
-  - **Leaping slam:** he jumps, drifts over you and drives the sword into the floor, sending out a dark shockwave you have to jump.
-  - **Sweeps:** wide horizontal slashes, up to three in a row when enraged.
+**The sword (from two thirds of his health):** he lands, raises his hand and draws one of Ganon's great swords out of the dark (the beast's own sword, shrunk to fit him). Then:
+
+- **He hunts you.** He walks after you quickly and attacks from a distance:
+  - **Leaping slam:** he jumps, drifts over you and drives the sword into the floor, sending out a dark shockwave you jump. If you run, this is how he catches up.
+  - **Sweeps:** wide slashes, up to three in a row when enraged.
   - **Lunge:** he winds up and dashes at you blade-first.
-- **In the air:** after a few attacks, or if you keep your distance, he sheathes the sword in shadow and flies around the room firing fans of dark magic. Sometimes he starts the original light-ball rally or his big magic charge. Then he climbs above you and **dive-slashes** down.
-- **Enraged (below one third):** he's faster, chains longer combos, and calls down lightning around you while he flies. Dark dust marks where each bolt will land.
-- **Your openings:** a slam or dive that misses leaves his blade **stuck in the floor**. Hit him with your sword then: two or three hits and he tears it free, throwing out a small shockwave. A **Light Arrow** still knocks him down at any time, on foot or in the air.
-- **Shield:** a raised shield blocks his sweeps and lunges. It can't stop a slam or a dive.
+- **In the air:** after a few attacks he sheathes the sword in shadow and flies around the room, firing fans of dark magic. He also mixes in the dark storm, the light-ball rally and his big magic charge, and dive-slashes back down.
+- **Enraged (below one third):** faster, longer combos, and lightning around you while he flies.
+- **Your openings:**
+  - **Stuck blade:** a slam or dive that misses leaves his blade stuck in the floor. Hit him with your sword then: two or three hits and he tears it free with a small shockwave.
+  - **Light Arrows:** they knock him down **only while he's in the air** (flying, casting, diving) **or his blade is stuck**. On foot he deflects them with the sword. After a knockdown he shrugs them off for about ten seconds once he's back up.
+  - **His own magic:** **hit his dark magic balls back with your sword**, as in the tennis rally. A returned ball hurts him and makes him flinch, but doesn't stun him. A shield just stops them.
+- **Shield:** a raised shield blocks his sweeps and lunges, but not a slam or a dive.
+- **Broken floor:** where floor tiles have fallen away he glides across at floor height. If you drop into a gap he takes to the air instead of following you down.
 
-There are no new animations: his walk is made in code by moving his leg joints over his standing pose, and his swings reuse his own throwing, volleying and pounding animations with the sword in hand.
+There are no new animations. His walk is made in code by moving his leg joints over his standing pose, and his swings reuse his own throwing, volleying and pounding animations with the sword in hand.
 
 #### Ganon's new attacks
 *Its own switch, "Ganon: New Attacks", under Boss Overhaul*
 
-- **Sword throw:** he hurls his right sword. It spins out like a boomerang and flies back to his hand.
-- **Fire slash:** he slashes the floor and a wave of flame races at you (three waves when enraged). Jump or sidestep.
-- **Tail sweep:** stay behind him too long and he lashes his tail across the floor behind him. Watch for the growl and the tail cocking, then jump. While he's stunned by a Light Arrow, his tail is safe to attack as before.
+He fights like the beast in *A Link to the Past*:
+
+- **Leap:** from far away he crouches, roars and leaps across the arena. He lands with a quake that sends a ring of fire racing outwards: jump it.
+- **Charge:** he paws the ground, then charges in a straight line. Sidestep and he buries his swords in the wall and stands there stuck: get behind him for the tail.
+- **Flame ring:** up close he plants himself and sweeps the floor with a ring of flame that has one gap. A single flame drops early on the gap's side so you can see where to run.
+- **Sword throw:** he hurls his right sword at chest height. It spins out like a boomerang and flies back to his hand. Shield it or get out of its way.
+- **Fire slash:** he slashes the floor and a wave of flame races at you (three waves when enraged).
+- **Tail sweep:** stay behind him too long and he lashes his tail. Watch for the warning: the tail cocks to one side and shakes, dark sparks crackle at its tip, and he growls. Only the tail itself hurts, so jump, back off, or raise your shield. While he's stunned by a Light Arrow, his tail is safe to attack as before.
 - **Roar:** linger right in front of him and he roars, blasting you back.
-- **Smarter choices:** he picks his attack by where you are and how long you've been there, and never uses the same special attack twice in a row.
+
+He picks by distance and by where you've been standing, never uses the same move twice in a row, and everything is faster and bigger once he's enraged.
 
 ### Miniboss & Enemy Overhaul
 *Enhancements → Difficulty → Enemies*

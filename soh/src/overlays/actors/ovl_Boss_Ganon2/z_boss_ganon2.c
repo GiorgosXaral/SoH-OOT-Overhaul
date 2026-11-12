@@ -1440,6 +1440,9 @@ void func_80900650(BossGanon2* this, PlayState* play) {
 //  - Fire slash:  slashes the floor and a wave of flame races at Link (three when enraged).
 //  - Tail sweep:  standing behind him for too long earns a lash of the tail. Any jump clears it.
 //  - Roar:        lingering right in front of him gets Link blasted back.
+//  - Leap:        from far away he crouches, roars and leaps across the arena; landing throws a ring of fire.
+//  - Charge:      paws the ground, then charges in a straight line; dodge and he buries his swords in the wall.
+//  - Flame ring:  up close he sweeps the floor with a ring of flame that has one gap, marked by an early flame.
 // He picks between these by where Link is and how long he has been there, and never uses the same one twice
 // in a row. Being stunned by a Light Arrow and hitting his tail work exactly as before.
 // =====================================================================================================================
@@ -1450,6 +1453,9 @@ typedef enum {
     /* 2 */ BO_G2_SP_FIRE_SLASH,
     /* 3 */ BO_G2_SP_TAIL,
     /* 4 */ BO_G2_SP_ROAR,
+    /* 5 */ BO_G2_SP_LEAP,
+    /* 6 */ BO_G2_SP_CHARGE,
+    /* 7 */ BO_G2_SP_FLAME_RING,
 } BossGanon2BoSpecial;
 
 #define BO_G2_CVAR_NEW CVAR_ENHANCEMENT("BossOverhaul.GanonNewAttacks")
@@ -1459,6 +1465,9 @@ void BossGanon2_BoSwordThrow(BossGanon2* this, PlayState* play);
 void BossGanon2_BoFireSlash(BossGanon2* this, PlayState* play);
 void BossGanon2_BoTailSweep(BossGanon2* this, PlayState* play);
 void BossGanon2_BoRoar(BossGanon2* this, PlayState* play);
+void BossGanon2_BoLeap(BossGanon2* this, PlayState* play);
+void BossGanon2_BoCharge(BossGanon2* this, PlayState* play);
+void BossGanon2_BoFlameRing(BossGanon2* this, PlayState* play);
 
 static s32 BossGanon2_BoSwordThrown(BossGanon2* this) {
     return EoShot_CountOwned(&this->actor, EO_SHOT_BOOMERANG) > 0;
@@ -1482,6 +1491,7 @@ static void BossGanon2_BoStart(BossGanon2* this, s16 special, AnimationHeader* a
     }
     this->boLastSpecial = special;
     this->boActTimer = 0;
+    this->boStage = 0;
     this->boHitDone = false;
     this->boSpecialCooldown = GANON2_ENRAGED(this) ? 70 : 110;
     this->unk_336 = 1;
@@ -1513,10 +1523,32 @@ s32 BossGanon2_BoPickSpecial(BossGanon2* this, PlayState* play) {
         return true;
     }
 
+    // Close, in front: the flame ring
+    if (this->unk_313 && (dist < 200.0f) && (this->boLastSpecial != BO_G2_SP_FLAME_RING) && (Rand_ZeroOne() < 0.35f)) {
+        BossGanon2_BoStart(this, BO_G2_SP_FLAME_RING, &gGanonGuardIdleAnim, false);
+        this->boSpecialCooldown += 30;
+        this->actionFunc = BossGanon2_BoFlameRing;
+        return true;
+    }
+
+    // Far away: he leaps after Link
+    if ((dist > 480.0f) && (this->boLastSpecial != BO_G2_SP_LEAP) && ((this->boFarTimer > 40) || (Rand_ZeroOne() < 0.5f))) {
+        BossGanon2_BoStart(this, BO_G2_SP_LEAP, &gGanonGuardIdleAnim, false);
+        this->actionFunc = BossGanon2_BoLeap;
+        return true;
+    }
+
     // Out of reach of his swords, in front of him
-    if (this->unk_313 && (dist > 230.0f) && (dist < 650.0f) && (Rand_ZeroOne() < 0.5f)) {
+    if (this->unk_313 && (dist > 220.0f) && (dist < 650.0f) && (Rand_ZeroOne() < 0.6f)) {
+        f32 roll = Rand_ZeroOne();
+
+        if ((dist < 520.0f) && (this->boLastSpecial != BO_G2_SP_CHARGE) && (roll < 0.4f)) {
+            BossGanon2_BoStart(this, BO_G2_SP_CHARGE, &gGanonGuardIdleAnim, false);
+            this->actionFunc = BossGanon2_BoCharge;
+            return true;
+        }
         if ((this->boLastSpecial != BO_G2_SP_THROW) && ((this->boLastSpecial == BO_G2_SP_FIRE_SLASH) ||
-                                                        (Rand_ZeroOne() < 0.5f))) {
+                                                        (roll < 0.7f))) {
             BossGanon2_BoStart(this, BO_G2_SP_THROW, &gGanonRightSwordSwingAnim, true);
             this->actionFunc = BossGanon2_BoSwordThrow;
         } else {
@@ -1541,6 +1573,11 @@ void BossGanon2_BoTrackPlayer(BossGanon2* this) {
         this->boBehindTimer++;
     } else {
         this->boBehindTimer = 0;
+    }
+    if (this->actor.xzDistToPlayer > 480.0f) {
+        this->boFarTimer++;
+    } else {
+        this->boFarTimer = 0;
     }
     if (this->unk_313 && (this->actor.xzDistToPlayer < 170.0f)) {
         this->boCloseTimer++;
@@ -1621,47 +1658,271 @@ void BossGanon2_BoFireSlash(BossGanon2* this, PlayState* play) {
     func_808FFAC8(this, play, 0);
 }
 
+// True when Link is touching the tail: tested along the tail's real joints, measured at the last draw.
+static s32 BossGanon2_BoTailTouches(BossGanon2* this, PlayState* play, Vec3f* hitPos) {
+    Player* player = GET_PLAYER(play);
+    Vec3f* p = &player->actor.world.pos;
+    s16 i;
+
+    for (i = 0; i < 5; i++) {
+        Vec3f* a = &this->boTailPts[i];
+        Vec3f* b = &this->boTailPts[i + 1];
+        f32 sx = b->x - a->x;
+        f32 sz = b->z - a->z;
+        f32 lenSq = SQ(sx) + SQ(sz);
+        f32 t = (lenSq > 0.0f) ? ((((p->x - a->x) * sx) + ((p->z - a->z) * sz)) / lenSq) : 0.0f;
+        f32 dx;
+        f32 dz;
+
+        t = CLAMP(t, 0.0f, 1.0f);
+        dx = p->x - (a->x + (sx * t));
+        dz = p->z - (a->z + (sz * t));
+        if ((SQ(dx) + SQ(dz)) < SQ(55.0f)) {
+            hitPos->x = a->x + (sx * t);
+            hitPos->y = p->y + 30.0f;
+            hitPos->z = a->z + (sz * t);
+            return true;
+        }
+    }
+    return false;
+}
+
 void BossGanon2_BoTailSweep(BossGanon2* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
     s16 t = this->boActTimer;
     s32 enraged = GANON2_ENRAGED(this);
-    s16 windup = enraged ? 10 : 14;
+    s16 windup = enraged ? 16 : 24;
+    Vec3f hitPos;
 
     SkelAnime_Update(&this->skelAnime);
     Math_ApproachZeroF(&this->actor.speedXZ, 0.5f, 1.0f);
     this->boActTimer++;
 
     if (t < windup) {
-        // Cocks the tail, growling: the warning
-        Math_ApproachS(&this->boTailYaw, 0x900, 2, 0x200);
-    } else if (t < (windup + 14)) {
-        // The lash: the tail whips across behind him and his body twists with it
+        // The warning: the tail cocks to one side and shakes, sparks crackle at its tip, and he growls
+        this->boTailYaw = 0x900 + (((t % 4) < 2) ? 0x200 : -0x200);
+        if ((t % 2) == 0) {
+            Eo_DarkPuff(play, &this->boTailPts[5], 0.8f);
+        }
+        if (t == 0) {
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_UNARI);
+        }
+    } else if (t < (windup + 12)) {
+        // The lash
         Math_ApproachS(&this->boTailYaw, -0xC00, 2, 0x800);
-        this->actor.shape.rot.y += 0x180;
-        this->actor.world.rot.y = this->actor.shape.rot.y;
-
         if (t == windup) {
             Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_ROAR);
             Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_SWORD);
         }
         if ((t % 3) == 0) {
-            Eo_Puff(play, &this->unk_1C4, 1.2f);
+            Eo_Puff(play, &this->boTailPts[5], 1.2f);
         }
-        if (!this->boHitDone && !this->unk_313 && (this->actor.xzDistToPlayer < 290.0f) &&
-            Eo_HurtPlayer(play, &this->actor, enraged ? 0x20 : 0x18, this->actor.yawTowardsPlayer, 15.0f, true,
-                          false)) {
-            this->boHitDone = true;
-            Actor_RequestQuakeAndRumble(&this->actor, play, 6, 10);
+        if (!this->boHitDone && BossGanon2_BoTailTouches(this, play, &hitPos)) {
+            if ((player->stateFlags1 & PLAYER_STATE1_SHIELDING) &&
+                (ABS((s16)(player->actor.shape.rot.y - Math_Vec3f_Yaw(&player->actor.world.pos, &hitPos))) < 0x3000)) {
+                // Stopped by the shield
+                EffectSsHitMark_SpawnFixedScale(play, 3, &hitPos);
+                Audio_PlayActorSound2(&player->actor, NA_SE_IT_SHIELD_REFLECT_SW);
+                Actor_SetPlayerKnockbackSmallNoDamage(play, &this->actor, 8.0f,
+                                                      Math_Vec3f_Yaw(&hitPos, &player->actor.world.pos), 2.0f);
+                this->boHitDone = true;
+            } else if (Eo_HurtPlayer(play, &this->actor, enraged ? 0x20 : 0x18,
+                                     Math_Vec3f_Yaw(&hitPos, &player->actor.world.pos), 15.0f, true, false)) {
+                this->boHitDone = true;
+                Actor_RequestQuakeAndRumble(&this->actor, play, 6, 10);
+            }
         }
     } else {
         Math_ApproachS(&this->boTailYaw, 0, 3, 0x300);
-        if (t > (windup + 30)) {
+        if (t > (windup + 28)) {
             func_808FFDB0(this, play);
             return;
         }
     }
 
-    (void)player;
+    func_808FFAC8(this, play, 0);
+}
+
+void BossGanon2_BoLeap(BossGanon2* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    s32 enraged = GANON2_ENRAGED(this);
+    s16 crouch = enraged ? 12 : 18;
+    s16 t = this->boActTimer;
+
+    SkelAnime_Update(&this->skelAnime);
+    this->boActTimer++;
+
+    switch (this->boStage) {
+        case 0: // crouches and roars
+            Math_ApproachZeroF(&this->actor.speedXZ, 0.5f, 2.0f);
+            BossGanon2_BoFace(this, 0x800);
+            if (t == 0) {
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_ROAR);
+            }
+            if ((t % 4) == 0) {
+                Eo_Puff(play, &this->actor.world.pos, 1.5f);
+            }
+            if (t >= crouch) {
+                f32 dist;
+
+                this->boTarget = player->actor.world.pos;
+                dist = Math_Vec3f_DistXZ(&this->actor.world.pos, &this->boTarget);
+                this->actor.world.rot.y = Math_Vec3f_Yaw(&this->actor.world.pos, &this->boTarget);
+                this->actor.shape.rot.y = this->actor.world.rot.y;
+                this->actor.velocity.y = 20.0f; // with his gravity of -1, about 40 frames in the air
+                this->actor.speedXZ = CLAMP(dist / 40.0f, 4.0f, 30.0f);
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_SWORD);
+                this->boStage = 1;
+                this->boActTimer = 0;
+            }
+            break;
+
+        case 1: // in the air
+            if ((t > 6) && (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
+                Vec3f pos = this->actor.world.pos;
+
+                this->actor.speedXZ = 0.0f;
+                Actor_RequestQuakeAndRumble(&this->actor, play, 10, 20);
+                EoShot_Ring(play, &this->actor, EO_LOOK_FIRE, &pos, enraged ? 560.0f : 460.0f,
+                            enraged ? 14.0f : 11.0f, 0x10);
+                this->boStage = 2;
+                this->boActTimer = 0;
+            } else if (t > 80) {
+                this->boStage = 2; // never found the floor: give up the leap
+                this->boActTimer = 0;
+            }
+            break;
+
+        case 2: // recovers
+            Math_ApproachZeroF(&this->actor.speedXZ, 0.5f, 2.0f);
+            if (t > (enraged ? 14 : 24)) {
+                func_808FFDB0(this, play);
+                return;
+            }
+            break;
+    }
+
+    func_808FFAC8(this, play, 0);
+}
+
+void BossGanon2_BoCharge(BossGanon2* this, PlayState* play) {
+    s32 enraged = GANON2_ENRAGED(this);
+    s16 t = this->boActTimer;
+
+    SkelAnime_Update(&this->skelAnime);
+    this->boActTimer++;
+
+    switch (this->boStage) {
+        case 0: // paws the ground
+            Math_ApproachZeroF(&this->actor.speedXZ, 0.5f, 2.0f);
+            BossGanon2_BoFace(this, 0x600);
+            if ((t % 6) == 0) {
+                Vec3f pos = this->actor.world.pos;
+
+                pos.x += Math_SinS(this->actor.shape.rot.y) * 90.0f;
+                pos.z += Math_CosS(this->actor.shape.rot.y) * 90.0f;
+                Eo_Puff(play, &pos, 1.2f);
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_WALK);
+            }
+            if (t >= (enraged ? 16 : 26)) {
+                Animation_MorphToLoop(&this->skelAnime, &gGanonWalkAnim, -4.0f);
+                this->skelAnime.playSpeed = 2.5f;
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_ROAR);
+                this->boStage = 1;
+                this->boActTimer = 0;
+            }
+            break;
+
+        case 1: // charges in a straight line, both swords out
+            Math_ApproachF(&this->actor.speedXZ, enraged ? 24.0f : 20.0f, 1.0f, 3.0f);
+            this->unk_312 = ((t % 2) == 0) ? 1 : 2;
+            if ((t % 4) == 0) {
+                Eo_Puff(play, &this->actor.world.pos, 1.0f);
+            }
+            if ((t > 4) && ((this->actor.bgCheckFlags & BGCHECKFLAG_WALL) || func_808FFA24(this, play))) {
+                // Into the wall: the swords bite into the rubble and he's stuck
+                this->actor.speedXZ = 0.0f;
+                Actor_RequestQuakeAndRumble(&this->actor, play, 10, 20);
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_SWDIMP);
+                Animation_MorphToLoop(&this->skelAnime, &gGanonStunLoopAnim, -4.0f);
+                this->boStage = 2;
+                this->boActTimer = 0;
+            } else if (t > 50) {
+                this->boStage = 3; // ran out of steam without hitting anything
+                this->boActTimer = 0;
+                Animation_MorphToLoop(&this->skelAnime, &gGanonGuardIdleAnim, -8.0f);
+            }
+            break;
+
+        case 2: // stuck: get behind him for the tail
+            this->actor.speedXZ = 0.0f;
+            if ((t % 8) == 0) {
+                Eo_Puff(play, &this->actor.focus.pos, 1.0f);
+            }
+            if (t > (enraged ? 55 : 85)) {
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_ROAR);
+                func_808FFDB0(this, play);
+                return;
+            }
+            break;
+
+        case 3:
+            Math_ApproachZeroF(&this->actor.speedXZ, 0.5f, 2.0f);
+            if (t > 15) {
+                func_808FFDB0(this, play);
+                return;
+            }
+            break;
+    }
+
+    if (this->boStage != 1) {
+        func_808FFAC8(this, play, 0);
+    }
+}
+
+void BossGanon2_BoFlameRing(BossGanon2* this, PlayState* play) {
+    s32 enraged = GANON2_ENRAGED(this);
+    s16 t = this->boActTimer;
+    Vec3f pos;
+    s16 i;
+
+    SkelAnime_Update(&this->skelAnime);
+    Math_ApproachZeroF(&this->actor.speedXZ, 0.5f, 2.0f);
+    this->boActTimer++;
+
+    if (t == 0) {
+        // The gap is to one side of Link: he has to run around, not back
+        this->boGapYaw = this->actor.yawTowardsPlayer + ((Rand_ZeroOne() < 0.5f) ? 0x4000 : -0x4000);
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_ROAR);
+        // A single flame drops early on the gap's side, so Link can read where to run
+        pos = this->actor.world.pos;
+        pos.x += Math_SinS(this->boGapYaw) * 200.0f;
+        pos.z += Math_CosS(this->boGapYaw) * 200.0f;
+        EoShot_FallingOrb(play, &this->actor, EO_KIND_FIRE, &pos, 260.0f, 0);
+    }
+
+    if (t == (enraged ? 14 : 20)) {
+        // The ring: flames racing outwards in every direction but the gap
+        for (i = 0; i < 16; i++) {
+            s16 yaw = this->boGapYaw + (s16)(i * 0x1000);
+
+            if ((i == 0) || (i == 1) || (i == 15)) {
+                continue; // the gap
+            }
+            pos = this->actor.world.pos;
+            pos.x += Math_SinS(yaw) * 60.0f;
+            pos.z += Math_CosS(yaw) * 60.0f;
+            EoShot_GroundWave(play, &this->actor, EO_LOOK_FIRE, &pos, yaw, enraged ? 15.0f : 12.0f, 45, 0x10);
+        }
+        Actor_RequestQuakeAndRumble(&this->actor, play, 6, 10);
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_SWDIMP);
+    }
+
+    if (t > (enraged ? 36 : 44)) {
+        func_808FFDB0(this, play);
+        return;
+    }
+
     func_808FFAC8(this, play, 0);
 }
 
@@ -3236,6 +3497,11 @@ void BossGanon2_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s*
     D_80907120.z = 17000.0f;
     D_8090712C.z = 3000.0f;
 
+    // Boss Overhaul: the tail's joints, for the tail sweep
+    if ((limbIndex >= 42) && (limbIndex <= 46)) {
+        Matrix_MultVec3f(&D_80906D60, &this->boTailPts[limbIndex - 42]);
+    }
+
     if (D_809070CC[limbIndex] >= 0) {
         Matrix_MultVec3f(&D_80906D60, &this->unk_234[D_809070CC[limbIndex]]);
     }
@@ -3252,6 +3518,7 @@ void BossGanon2_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s*
         Matrix_MultVec3f(&D_80906D60, &this->unk_1D0);
     } else if (limbIndex == 45) {
         Matrix_MultVec3f(&D_80907138, &this->unk_1C4);
+        this->boTailPts[5] = this->unk_1C4;
     }
 
     temp_v0 = D_8090709C[limbIndex];

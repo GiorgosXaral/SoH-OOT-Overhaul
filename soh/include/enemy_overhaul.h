@@ -107,6 +107,10 @@ Actor* EoShot_OrbLob(PlayState* play, Actor* owner, s32 kind, Vec3f* pos, Vec3f*
 void EoShot_SetHoming(Actor* shot, s16 step);
 // Overrides an orb's damage (0x10 is one heart) and hit effect (0 none, 1 fire, 2 ice, 3 shock, 4 knockback).
 void EoShot_SetDamage(Actor* shot, u8 damage, u8 effect);
+// Called when an orb that Link hit back with his sword reaches the one who fired it.
+typedef void (*EoShotReturnFunc)(Actor* owner, PlayState* play);
+// Lets Link hit an orb back at its owner with his sword (a shield just stops it). `onReturn` runs when it arrives.
+void EoShot_SetReflectable(Actor* shot, EoShotReturnFunc onReturn);
 
 // A wave racing along the floor from `pos` in direction `yaw`.
 Actor* EoShot_GroundWave(PlayState* play, Actor* owner, s32 look, Vec3f* pos, s16 yaw, f32 speed, s16 life,

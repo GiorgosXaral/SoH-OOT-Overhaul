@@ -121,6 +121,11 @@ typedef struct BossGanon2 {
     s16 boActTimer;
     s16 boTailYaw;      // sideways swing added to the tail joints
     u8 boHitDone;
+    u8 boStage;         // step within the current new attack
+    s16 boGapYaw;       // flame ring: where the gap is
+    s16 boFarTimer;     // frames Link has stayed far away
+    Vec3f boTarget;     // leap: where he lands
+    Vec3f boTailPts[6]; // the tail's joints and tip, measured while drawing
 } BossGanon2; // size = 0x08E4 (+ overhaul fields)
 
 #endif
