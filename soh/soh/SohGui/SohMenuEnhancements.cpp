@@ -54,6 +54,12 @@ static const std::map<int32_t, const char*> eponaControlModes = {
     { 1, "Freeform" },
     { 2, "Hybrid" },
 };
+static const std::map<int32_t, const char*> homingArrowModes = {
+    { 0, "Off" },
+    { 1, "Light Arrows only" },
+    { 2, "All magic arrows" },
+};
+
 static const std::map<int32_t, const char*> secretClueStrengths = {
     { 0, "Subtle" },
     { 1, "Obvious" },
@@ -936,6 +942,14 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Assignable Shields, Tunics and Boots", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("AssignableTunicsAndBoots"))
         .Options(CheckboxOptions().Tooltip("Allows equipping Shields, Tunics and Boots to C-Buttons/D-pad."));
+    AddWidget(path, "Homing Arrows", WIDGET_CVAR_COMBOBOX)
+        .CVar(CVAR_ENHANCEMENT("HomingArrows"))
+        .Options(ComboboxOptions()
+                     .ComboMap(homingArrowModes)
+                     .DefaultIndex(1)
+                     .Tooltip("Arrows fired while you're Z-targeting an enemy fly straight at it, following it as it "
+                              "moves, so they always hit unless a wall is in the way. Without a lock-on they fly "
+                              "normally."));
     AddWidget(path, "Better Hover Boots", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("BetterHoverBoots"))
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(

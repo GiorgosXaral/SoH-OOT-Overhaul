@@ -3972,6 +3972,12 @@ void BossGanon_Update(Actor* thisx, PlayState* play2) {
     this->actionFunc(this, play);
     BossGanon_BoUpdateSword(this);
 
+    // Boss Overhaul: he can be locked onto for the whole fight (not only while he's down), without Navi
+    if (BO_GDF_SWORD_ON() && (this->csState == 0) && (this->actionFunc != BossGanon_IntroCutscene) &&
+        (this->actionFunc != BossGanon_DeathAndTowerCutscene)) {
+        this->actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
+    }
+
     for (i = 0; i < ARRAY_COUNT(this->timers); i++) {
         if (this->timers[i] != 0) {
             this->timers[i]--;

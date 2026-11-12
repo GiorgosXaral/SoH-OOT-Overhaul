@@ -207,6 +207,48 @@ void EnArrow_Destroy(Actor* thisx, PlayState* play) {
     }
 }
 
+// SoH-OOT-Overhaul: Homing Arrows. 0 off, 1 Light Arrows (default), 2 all magic arrows
+static s32 EnArrow_Homes(s16 params) {
+    s32 mode = CVarGetInteger(CVAR_ENHANCEMENT("HomingArrows"), 1);
+
+    if (mode == 1) {
+        return params == ARROW_LIGHT;
+    }
+    if (mode == 2) {
+        return (params == ARROW_FIRE) || (params == ARROW_ICE) || (params == ARROW_LIGHT);
+    }
+    return false;
+}
+
+// Steers a homing arrow straight at its target's centre every frame, so it always arrives unless a wall is in the way.
+static void EnArrow_Home(EnArrow* this) {
+    Actor* target = this->homingTarget;
+    Vec3f to;
+    f32 dist;
+    f32 step;
+
+    if ((target == NULL) || (target->update == NULL)) {
+        this->homingTarget = NULL;
+        return;
+    }
+
+    to.x = target->focus.pos.x - this->actor.world.pos.x;
+    to.y = target->focus.pos.y - this->actor.world.pos.y;
+    to.z = target->focus.pos.z - this->actor.world.pos.z;
+    dist = sqrtf(SQ(to.x) + SQ(to.y) + SQ(to.z));
+    if (dist < 1.0f) {
+        return;
+    }
+    // Never overshoots: the last step lands on the target
+    step = (dist < 150.0f) ? (dist + 10.0f) : 150.0f;
+
+    this->actor.gravity = 0.0f;
+    this->actor.world.rot.y = Math_Atan2S(to.z, to.x);
+    this->actor.shape.rot.y = this->actor.world.rot.y;
+    this->actor.speedXZ = step * (sqrtf(SQ(to.x) + SQ(to.z)) / dist);
+    this->actor.velocity.y = step * (to.y / dist);
+}
+
 void EnArrow_Shoot(EnArrow* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
 
@@ -238,13 +280,21 @@ void EnArrow_Shoot(EnArrow* this, PlayState* play) {
         EnArrow_SetupAction(this, EnArrow_Fly);
         Math_Vec3f_Copy(&this->unk_210, &this->actor.world.pos);
 
+        // Homing Arrows: remember who Link is locked onto
+        this->homingTarget = NULL;
+        if (EnArrow_Homes(this->actor.params) && (player->focusActor != NULL) &&
+            (player->focusActor != &player->actor) && (player->focusActor->update != NULL) &&
+            (player->stateFlags1 & PLAYER_STATE1_Z_TARGETING)) {
+            this->homingTarget = player->focusActor;
+        }
+
         if (this->actor.params >= ARROW_SEED) {
             Actor_SetProjectileSpeed(&this->actor, 80.0f);
             this->timer = 15;
             this->actor.shape.rot.x = this->actor.shape.rot.y = this->actor.shape.rot.z = 0;
         } else {
             Actor_SetProjectileSpeed(&this->actor, 150.0f);
-            this->timer = 12;
+            this->timer = (this->homingTarget != NULL) ? 40 : 12;
         }
     }
 }
@@ -310,7 +360,7 @@ void EnArrow_Fly(EnArrow* this, PlayState* play) {
         return;
     }
 
-    if (this->timer < 7.2000003f) {
+    if ((this->timer < 7.2000003f) && (this->homingTarget == NULL)) {
         this->actor.gravity = -0.4f;
     }
 
@@ -381,6 +431,9 @@ void EnArrow_Fly(EnArrow* this, PlayState* play) {
         }
     } else {
         Math_Vec3f_Copy(&this->unk_210, &this->actor.world.pos);
+        if (this->homingTarget != NULL) {
+            EnArrow_Home(this);
+        }
         Actor_MoveXZGravity(&this->actor);
 
         if ((this->touchedPoly =

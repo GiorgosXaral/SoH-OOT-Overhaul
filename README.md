@@ -54,6 +54,7 @@ Every main boss has twice the health, learns new attacks, and becomes more aggre
   - **Light Arrows:** they knock him down **only while he's in the air** (flying, casting, diving) **or his blade is stuck**. On foot he deflects them with the sword. After a knockdown he shrugs them off for about ten seconds once he's back up.
   - **His own magic:** **hit his dark magic balls back with your sword**, as in the tennis rally. A returned ball hurts him and makes him flinch, but doesn't stun him. A shield just stops them.
 - **Shield:** a raised shield blocks his sweeps and lunges, but not a slam or a dive.
+- **Lock-on:** you can Z-target him for the whole fight, floating, flying or on foot, not only while he's down, and without Navi. Pair it with Homing Arrows to bring him down from the air.
 - **Broken floor:** where floor tiles have fallen away he glides across at floor height. If you drop into a gap he takes to the air instead of following you down.
 
 There are no new animations. His walk is made in code by moving his leg joints over his standing pose, and his swings reuse his own throwing, volleying and pounding animations with the sword in hand.
@@ -170,6 +171,11 @@ A window that follows your journey, so you never need a walkthrough:
 - **Collection**: hearts, Gold Skulltulas and songs.
 
 It follows the original story, so the directions won't match a Randomizer save.
+
+### Homing Arrows
+*Enhancements → Items → Homing Arrows* (default: Light Arrows only)
+
+Fire an arrow while you're Z-targeting an enemy and it flies straight at it, following it as it moves, so it always hits unless a wall is in the way. Without a lock-on, arrows fly normally. Choose **Light Arrows only**, **All magic arrows** (Fire, Ice and Light), or **Off**.
 
 ### Better Hover Boots
 *Enhancements → Items → Better Hover Boots* (on by default)

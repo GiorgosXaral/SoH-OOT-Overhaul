@@ -23,7 +23,8 @@ typedef struct EnArrow {
     /* 0x024C */ Actor* hitActor;
     /* 0x0250 */ Vec3f unk_250;
     /* 0x025C */ EnArrowActionFunc actionFunc;
-} EnArrow; // size = 0x0260
+    Actor* homingTarget; // SoH-OOT-Overhaul: Homing Arrows (the enemy Link was locked onto when he fired)
+} EnArrow; // size = 0x0260 (vanilla)
 
 typedef enum {
     /* -10 */ ARROW_CS_NUT = -10, // cutscene deku nuts are allowed to update in blocking mode
